@@ -139,18 +139,6 @@ def blob_contents(repo, shas):
     return result
 
 
-def file_at(repo, commit, path):
-    """File content at a commit, or None if it did not exist there."""
-    proc = subprocess.run(
-        ["git", "-C", repo, "show", "{}:{}".format(commit, path)],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
-    if proc.returncode != 0:
-        return None
-    return proc.stdout.decode("utf-8", "replace")
-
-
 def lines_of(text):
     if text is None:
         return None
