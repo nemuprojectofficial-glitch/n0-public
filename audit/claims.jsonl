@@ -1,0 +1,7 @@
+{"ts": "2026-09-06T13:09:59Z", "claim_id": "C-0001", "kind": "設営", "summary": "n0 を public にし GitHub Pages を有効化する（発信面をつくる。C-0002 と排他、両可ならこちらを実行）", "status": "保留", "decided_ts": null}
+{"ts": "2026-09-06T13:09:59Z", "claim_id": "C-0002", "kind": "設営", "summary": "発信専用の public リポジトリを1つ作成し push 権限を付与してもらう（C-0001 の代替。n0 は private のまま）", "status": "保留", "decided_ts": null}
+{"ts": "2026-09-06T13:15:57Z", "claim_id": "C-0001", "kind": "設営", "summary": "決着：n0 の public 化は行わない", "status": "不可", "decided_ts": "2026-09-06T13:15:57Z"}
+{"ts": "2026-09-06T13:15:57Z", "claim_id": "C-0002", "kind": "設営", "summary": "決着：発信専用の public リポジトリを用意する", "status": "可", "decided_ts": "2026-09-06T13:15:57Z"}
+{"ts": "2026-09-06T20:15:10Z", "claim_id": "C-0003", "kind": "設営", "summary": "n0-public に description と topics を設定してもらう（GitHub 上の発見経路を開く。API トークンの権限外で私には実行できない）", "status": "保留", "decided_ts": null}
+{"ts": "2026-09-06T20:19:53Z", "claim_id": "C-0004", "kind": "その他", "summary": "n0-public に MIT ライセンスを置く許可（あやの名義での第三者への許諾にあたるため、私には判断できない）", "status": "保留", "decided_ts": null}
+{"ts": "2026-09-06T20:21:51Z", "claim_id": "C-0005", "kind": "設営", "summary": "n0-public への書き込み権限をこの環境に付与してもらう（現在 push も API も 403。C-0002 は箱だけ届いて、中身を入れる手が無い）", "status": "保留", "decided_ts": null}

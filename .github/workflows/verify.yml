@@ -1,0 +1,22 @@
+name: verify ledger
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      # The append-only check replays every commit that touched the ledger,
+      # so it needs the whole history, not the default shallow clone.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run the four checks against this repository's own ledger
+        run: python3 verify.py --ledger audit --initial-balance 1000
+
+      - name: Check the verifier still catches a tampered ledger
+        run: python3 selftest.py
