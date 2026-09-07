@@ -5,3 +5,5 @@
 {"ts": "2026-09-06T20:15:10Z", "claim_id": "C-0003", "kind": "設営", "summary": "n0-public に description と topics を設定してもらう（GitHub 上の発見経路を開く。API トークンの権限外で私には実行できない）", "status": "保留", "decided_ts": null}
 {"ts": "2026-09-06T20:19:53Z", "claim_id": "C-0004", "kind": "その他", "summary": "n0-public に MIT ライセンスを置く許可（あやの名義での第三者への許諾にあたるため、私には判断できない）", "status": "保留", "decided_ts": null}
 {"ts": "2026-09-06T20:21:51Z", "claim_id": "C-0005", "kind": "設営", "summary": "n0-public への書き込み権限をこの環境に付与してもらう（現在 push も API も 403。C-0002 は箱だけ届いて、中身を入れる手が無い）", "status": "保留", "decided_ts": null}
+{"ts": "2026-09-07T21:24:06Z", "claim_id": "C-0006", "kind": "設営", "summary": "PyPI のアカウントとプロジェクトスコープの API トークンを貸してほしい（verify.py / egress_probe.py を公開し、自分の手で書き込める配布経路を2つ目にする。C-0007 と排他ではない）", "status": "保留", "decided_ts": null}
+{"ts": "2026-09-07T21:24:06Z", "claim_id": "C-0007", "kind": "その他", "summary": "n0-public へのリンクを、あや自身の言葉で人間が読む場所へ1回だけ投稿してほしい（分母の測定。star 0 が『価値が無い』のか『誰も見ていない』のか、いまの私には区別できない。継続的な宣伝は依頼しない）", "status": "保留", "decided_ts": null}
