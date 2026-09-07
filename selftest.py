@@ -146,6 +146,87 @@ CASES = [
 ]
 
 
+def build_merge_repo(resolution):
+    """Two branches each append a different row, then merge with `resolution`.
+
+    `resolution(lines_ours, lines_theirs) -> lines` decides what the merge
+    commit contains, standing in for whatever merge driver or human resolves
+    the conflict.
+    """
+    repo = make_repo(CLEAN)
+    base_rows = deep_copy(CLEAN)
+
+    ours = base_rows["predictions.jsonl"] + [
+        {"ts": "2026-01-02T00:00:00Z", "pred_id": "P-0002", "x": "branch A's row",
+         "why_not_me": "-", "deadline": "2026-01-10T00:00:00Z", "result": "unresolved",
+         "result_ts": None, "evidence": None}]
+    theirs = base_rows["predictions.jsonl"] + [
+        {"ts": "2026-01-02T01:00:00Z", "pred_id": "P-0003", "x": "branch B's row",
+         "why_not_me": "-", "deadline": "2026-01-10T00:00:00Z", "result": "unresolved",
+         "result_ts": None, "evidence": None}]
+
+    git(repo, "checkout", "-q", "-b", "other")
+    rows = deep_copy(base_rows); rows["predictions.jsonl"] = theirs
+    write_ledger(repo, rows)
+    git(repo, "commit", "-qam", "branch B appends")
+
+    git(repo, "checkout", "-q", "-")
+    rows = deep_copy(base_rows); rows["predictions.jsonl"] = ours
+    write_ledger(repo, rows)
+    git(repo, "commit", "-qam", "branch A appends")
+
+    # Expected to conflict: both branches appended at the end of the same file.
+    # The conflict is the situation under test, so a non-zero exit here is fine.
+    run("git", "-C", repo, "merge", "--no-commit", "--no-ff", "other")
+    merged = resolution([json.dumps(r, ensure_ascii=False) for r in ours],
+                        [json.dumps(r, ensure_ascii=False) for r in theirs])
+    with open(os.path.join(repo, "audit", "predictions.jsonl"), "w", encoding="utf-8") as fh:
+        fh.write("\n".join(merged) + "\n")
+    git(repo, "add", "-A")
+    git(repo, "-c", "core.editor=true", "commit", "-q", "--no-edit")
+    return repo
+
+
+def case_merge_keeping_everything():
+    """A merge that keeps both sides' lines must not be reported as tampering.
+
+    Concurrent appends legitimately interleave. If the check demanded a linear
+    prefix here it would fire on every honest merge, and an alarm that is always
+    ringing is the same as no alarm.
+    """
+    def union(ours, theirs):
+        return ours + [line for line in theirs if line not in ours]
+    repo = build_merge_repo(union)
+    try:
+        code, result = verify(repo, NOW_BEFORE_DEADLINE)
+        fired = {f["check"] for f in result["failures"]}
+        ok = "append_only" not in fired
+        print("{}  {}".format("ok  " if ok else "FAIL", "a merge that keeps every line is not a violation"))
+        return None if ok else "a merge that keeps every line is not a violation: fired {}".format(sorted(fired))
+    finally:
+        shutil.rmtree(repo, ignore_errors=True)
+
+
+def case_merge_dropping_a_line():
+    """A merge that resolves by discarding one side must be caught.
+
+    This is how a concurrent write actually loses data: not by editing a line,
+    but by a conflict resolution that picks one side. Nothing in the working
+    tree shows it afterwards — only the parent edges do.
+    """
+    def keep_ours_only(ours, theirs):
+        return ours
+    repo = build_merge_repo(keep_ours_only)
+    try:
+        code, result = verify(repo, NOW_BEFORE_DEADLINE)
+        fired = {f["check"] for f in result["failures"]}
+        ok = "append_only" in fired and code == 1
+        print("{}  {}".format("ok  " if ok else "FAIL", "a merge that drops a line is caught"))
+        return None if ok else "a merge that drops a line is caught: fired {}".format(sorted(fired) or "nothing")
+    finally:
+        shutil.rmtree(repo, ignore_errors=True)
+
+
 def case_no_history():
     """A repository with nothing committed yet must not be reported as tampered.
 
@@ -191,9 +272,10 @@ def main():
         finally:
             shutil.rmtree(repo, ignore_errors=True)
 
-    extra = case_no_history()
-    if extra:
-        failures.append(extra)
+    for extra_case in (case_merge_keeping_everything, case_merge_dropping_a_line, case_no_history):
+        extra = extra_case()
+        if extra:
+            failures.append(extra)
 
     print()
     if failures:
@@ -201,7 +283,7 @@ def main():
             print("  " + line)
         print("\n{} self-test(s) failed. verify.py is not checking what it claims to.".format(len(failures)))
         return 1
-    print("verify.py handles all {} cases.".format(len(CASES) + 1))
+    print("verify.py handles all {} cases.".format(len(CASES) + 3))
     return 0
 
 

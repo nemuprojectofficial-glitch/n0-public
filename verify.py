@@ -71,10 +71,72 @@ def has_commits(repo):
     return proc.returncode == 0
 
 
-def commits_touching(repo, path):
-    """Commits that touched `path`, oldest first."""
-    out = git(repo, "log", "--reverse", "--format=%H", "--", path)
-    return [line for line in out.splitlines() if line]
+def commit_graph(repo):
+    """Every commit reachable from HEAD, oldest first, as (sha, [parents]).
+
+    Deliberately not `git log -- <path>`: path-limited log applies history
+    simplification and drops merge commits whose result matches a parent, which
+    is exactly where a concurrent append can lose a line. The check has to walk
+    real parent edges or it cannot see what happened at a merge.
+    """
+    out = git(repo, "log", "--reverse", "--format=%H %P", "HEAD")
+    graph = []
+    for line in out.splitlines():
+        parts = line.split()
+        if parts:
+            graph.append((parts[0], parts[1:]))
+    return graph
+
+
+def blob_shas(repo, revs, path):
+    """{rev: blob sha or None} for `<rev>:<path>`, in a single git call.
+
+    One process for the whole history rather than one per commit, so the check
+    stays usable as the log grows.
+    """
+    if not revs:
+        return {}
+    payload = "".join("{}:{}\n".format(rev, path) for rev in revs)
+    proc = subprocess.run(
+        ["git", "-C", repo, "cat-file", "--batch-check=%(objectname) %(objecttype)"],
+        input=payload.encode("utf-8"),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+    )
+    result = {}
+    lines = proc.stdout.decode("utf-8", "replace").splitlines()
+    for rev, line in zip(revs, lines):
+        parts = line.split()
+        result[rev] = parts[0] if len(parts) >= 2 and parts[1] == "blob" else None
+    return result
+
+
+def blob_contents(repo, shas):
+    """{sha: text} for the given blob shas, in a single git call."""
+    shas = [s for s in dict.fromkeys(shas) if s]
+    if not shas:
+        return {}
+    payload = "".join(sha + "\n" for sha in shas)
+    proc = subprocess.run(
+        ["git", "-C", repo, "cat-file", "--batch"],
+        input=payload.encode("utf-8"),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+    )
+    data = proc.stdout
+    result, offset = {}, 0
+    while offset < len(data):
+        end = data.find(b"\n", offset)
+        if end == -1:
+            break
+        header = data[offset:end].decode("utf-8", "replace").split()
+        offset = end + 1
+        if len(header) < 3:
+            continue
+        sha, size = header[0], int(header[2])
+        result[sha] = data[offset:offset + size].decode("utf-8", "replace")
+        offset += size + 1
+    return result
 
 
 def file_at(repo, commit, path):
@@ -99,61 +161,99 @@ def lines_of(text):
 
 
 def check_append_only(repo, ledger_dir, files):
-    """No commit may change or drop a line that an earlier commit already wrote.
+    """No commit may change or drop a line that one of its parents already wrote.
 
     This is the one check that does not trust the agent at all: it reads the
-    object history, not the working tree. Rewritten history (force-push, rebase)
-    hides violations from this check, so pair it with a branch protection rule
-    or an external mirror if the stakes are high.
+    object history, not the working tree.
+
+    Two rules, because a commit with two parents is a different situation from
+    one with a single parent:
+
+    * **One parent** — the parent's lines must be a *prefix* of the child's.
+      Nothing rewritten, nothing removed, nothing inserted in the middle. This
+      is the ordinary case and the strictest statement available.
+    * **A merge** — every line in *every* parent must still be present in the
+      child, counted with multiplicity. Order is not required, because a merge
+      of two independent appends legitimately interleaves them. What is required
+      is that nothing was dropped in the resolution, which is precisely the way
+      a concurrent write loses data.
+
+    The limits, stated plainly: this catches editing, not history rewriting. A
+    force-push that discards commits leaves nothing to compare. And it cannot
+    detect a line that was *never written* — an omission leaves no trace
+    anywhere, which is why the mechanism is paired with a lock rather than
+    relied on alone.
     """
     failures = []
+    try:
+        graph = commit_graph(repo)
+    except RuntimeError as exc:
+        return [Failure(CHECK_APPEND_ONLY, "(history)", str(exc))]
+
+    revs = []
+    for sha, parents in graph:
+        revs.append(sha)
+        revs.extend(parents)
+    revs = list(dict.fromkeys(revs))
+
     for name in files:
         path = "{}/{}".format(ledger_dir, name) if ledger_dir else name
-        try:
-            history = commits_touching(repo, path)
-        except RuntimeError as exc:
-            failures.append(Failure(CHECK_APPEND_ONLY, path, str(exc)))
-            continue
-        previous = []
-        previous_commit = None
-        for commit in history:
-            current = lines_of(file_at(repo, commit, path))
-            if current is None:
-                if previous:
-                    failures.append(
-                        Failure(
-                            CHECK_APPEND_ONLY,
-                            "{} @ {}".format(path, commit[:8]),
-                            "file was deleted after holding {} line(s)".format(len(previous)),
-                        )
-                    )
-                continue
-            if len(current) < len(previous):
-                failures.append(
-                    Failure(
-                        CHECK_APPEND_ONLY,
-                        "{} @ {}".format(path, commit[:8]),
-                        "line count fell {} -> {} (previous commit {})".format(
-                            len(previous), len(current), (previous_commit or "-")[:8]
-                        ),
-                    )
-                )
-            else:
-                for i, old in enumerate(previous):
-                    if current[i] != old:
-                        failures.append(
-                            Failure(
-                                CHECK_APPEND_ONLY,
-                                "{} @ {} line {}".format(path, commit[:8], i + 1),
-                                "existing line was rewritten\n        was: {}\n        now: {}".format(
-                                    trim(old), trim(current[i])
-                                ),
-                            )
-                        )
-                        break
-            previous = current
-            previous_commit = commit
+        shas = blob_shas(repo, revs, path)
+        contents = blob_contents(repo, shas.values())
+
+        def lines_at(rev):
+            sha = shas.get(rev)
+            return lines_of(contents.get(sha)) if sha else None
+
+        for sha, parents in graph:
+            child = lines_at(sha)
+            for parent in parents:
+                before = lines_at(parent)
+                if before is None:
+                    continue
+                if child is None:
+                    failures.append(Failure(
+                        CHECK_APPEND_ONLY, "{} @ {}".format(path, sha[:8]),
+                        "file was deleted; parent {} held {} line(s)".format(parent[:8], len(before))))
+                    continue
+                if len(parents) == 1:
+                    problem = prefix_violation(before, child)
+                    if problem:
+                        failures.append(Failure(
+                            CHECK_APPEND_ONLY, "{} @ {}".format(path, sha[:8]), problem))
+                else:
+                    missing = missing_lines(before, child)
+                    if missing:
+                        failures.append(Failure(
+                            CHECK_APPEND_ONLY, "{} @ {} (merge)".format(path, sha[:8]),
+                            "{} line(s) from parent {} did not survive the merge\n"
+                            "        first lost: {}".format(
+                                len(missing), parent[:8], trim(missing[0]))))
     return failures
+
+
+def prefix_violation(before, after):
+    """None if `before` is a prefix of `after`, else a description of the break."""
+    if len(after) < len(before):
+        return "line count fell {} -> {}".format(len(before), len(after))
+    for i, old in enumerate(before):
+        if after[i] != old:
+            return ("existing line {} was rewritten\n        was: {}\n        now: {}"
+                    .format(i + 1, trim(old), trim(after[i])))
+    return None
+
+
+def missing_lines(before, after):
+    """Lines of `before` that `after` does not contain, counted with multiplicity."""
+    from collections import Counter
+    remaining = Counter(after)
+    lost = []
+    for line in before:
+        if remaining[line] > 0:
+            remaining[line] -= 1
+        else:
+            lost.append(line)
+    return lost
 
 
 def trim(s, n=110):
@@ -263,6 +363,11 @@ def check_predictions(root, ledger_dir, now):
     any more. It is an excuse. This is the check an agent will most want to skip,
     which is exactly why it is mechanical."""
     rows, failures = read_rows(root, ledger_dir, "predictions.jsonl")
+
+    # "The last row wins" is resolved by the row's own timestamp, not by its
+    # position in the file. A merge of two concurrent appends may interleave
+    # them, and if position decided the winner, a merge could silently change
+    # which state a prediction is in. Position is only the tie-breaker.
     latest = {}
     for lineno, row in rows:
         pred_id = row.get("pred_id")
@@ -272,7 +377,10 @@ def check_predictions(root, ledger_dir, now):
                         "row has no pred_id")
             )
             continue
-        latest[pred_id] = (lineno, row)
+        key = (parse_ts(row.get("ts")) or datetime.min.replace(tzinfo=timezone.utc), lineno)
+        if pred_id not in latest or key > latest[pred_id][0]:
+            latest[pred_id] = (key, lineno, row)
+    latest = {pid: (lineno, row) for pid, (_, lineno, row) in latest.items()}
 
     for pred_id, (lineno, row) in sorted(latest.items()):
         if not row.get("x") or not row.get("deadline"):

@@ -29,6 +29,43 @@ The limit is worth stating plainly: **this catches editing, not rewriting.**
 A force-push that discards history leaves nothing to compare. If that matters
 for your case, protect the branch or mirror it somewhere the agent cannot push.
 
+### Merges, and why they are the dangerous case
+
+If two instances of the agent can ever run at once, they will both append and
+both push, and one of them will be told to reconcile. That reconciliation is
+where ledger lines actually die — not from an edit, but from a conflict
+resolved by keeping one side.
+
+So the check treats a merge differently from an ordinary commit:
+
+* **One parent** — the parent's lines must be a **prefix** of the child's.
+  Nothing rewritten, removed, or inserted in the middle.
+* **A merge** — every line in **every** parent must still be present in the
+  child, counted with multiplicity. Order is not required: two independent
+  appends legitimately interleave. What is required is that the resolution
+  dropped nothing.
+
+Demanding a linear prefix at a merge would fire on every honest concurrent
+append, and an alarm that is always ringing is the same as no alarm.
+
+Two things follow for anyone running this:
+
+1. **Set a union merge driver** on the ledger, so an append/append conflict
+   resolves by keeping both sides instead of asking a tired agent to choose:
+
+   ```gitattributes
+   audit/*.jsonl merge=union
+   ```
+
+2. **Do not let "last row wins" depend on file position.** A merge may reorder
+   rows. Resolve the current state of a `claim_id` or `pred_id` by the row's own
+   `ts`, with position only as a tie-breaker. `verify.py` does this in check 4.
+
+Neither of those replaces preventing concurrency in the first place. Nothing in
+an append-only log can detect a line that was **never written** — omission
+leaves no trace anywhere — so this is a backstop for a lock, not a substitute
+for one.
+
 ---
 
 ## The six files
