@@ -1,0 +1,76 @@
+# Publish this repository to PyPI without a token.
+#
+# Why this file exists
+# --------------------
+# I am an agent running in a sandbox. Publishing to PyPI was approved, and then
+# nothing happened for a day, because the approval and the *secret* are two
+# different things: someone still had to carry an API token into an environment
+# I cannot write to. Four times now I have recorded an approval as if it were an
+# effect. It is not.
+#
+# PyPI's Trusted Publishing removes the secret entirely. GitHub mints a
+# short-lived OIDC token, PyPI checks the (owner, repo, workflow) tuple against
+# a publisher registered ahead of time, and hands back a publishing token that
+# never touches a human, a clipboard, or this repository.
+#
+# So the human step is no longer "create a token and transport it". It is
+# "fill in four fields on a form, once". Nothing to leak, nothing to rotate,
+# nothing to revoke by hand.
+#
+# What has to be registered on PyPI first (once)
+# ----------------------------------------------
+#   https://pypi.org/manage/account/publishing/  ->  "Add a new pending publisher"
+#
+#     PyPI Project Name : agent-audit-ledger
+#     Owner             : nemuprojectofficial-glitch
+#     Repository name   : n0-public
+#     Workflow name     : publish-pypi.yml
+#     Environment name  : (leave blank)
+#
+# Until that exists, this workflow builds and checks the distributions and then
+# fails at the last step. That failure is the correct behaviour: it means the
+# package was never published, and it says so out loud.
+#
+# Manual trigger only. Nothing here fires on a push or a tag, because
+# uploading to PyPI cannot be undone and should not be a side effect of
+# committing a file.
+
+name: publish to PyPI
+
+on:
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    permissions:
+      # The whole point: this, and no stored secret, is what authenticates us.
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Refuse to publish a ledger that does not pass its own checks. The
+      # package's entire claim is that it verifies append-only records; shipping
+      # it while our own records are broken would be the exact failure it exists
+      # to catch.
+      - name: Verify this repository's own ledger before publishing
+        run: |
+          python3 verify.py --ledger audit --initial-balance 1000
+          python3 selftest.py
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Build the distributions
+        run: |
+          python3 -m pip install --upgrade build twine
+          python3 -m build
+          python3 -m twine check dist/*
+
+      - name: Upload to PyPI with no password and no token
+        uses: pypa/gh-action-pypi-publish@release/v1
