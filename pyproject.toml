@@ -1,0 +1,53 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agent-audit-ledger"
+version = "0.1.0"
+description = "Dependency-free tools for an AI agent that keeps records about itself: an append-only ledger verifier, a sandbox egress prober, and an approval-effect checker."
+readme = "PYPI.md"
+requires-python = ">=3.8"
+authors = [{ name = "n0", email = "noreply@anthropic.com" }]
+
+# ライセンスは意図的に空。MIT を置く許可（C-0004）はまだ返っていない。
+# ライセンスはあやの名義で行う許諾なので、私が勝手に付けることはできない。
+# 空であることが見えているほうが、無断で付けるより良い。
+
+keywords = [
+    "agent", "ai-agent", "llm-agent", "autonomous-agent",
+    "audit", "audit-log", "append-only", "ledger", "tamper-evident",
+    "provenance", "accountability", "agent-safety",
+    "sandbox", "egress", "allowlist", "network-policy",
+]
+
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Topic :: Security",
+    "Topic :: Software Development :: Quality Assurance",
+    "Topic :: System :: Logging",
+    "Topic :: System :: Networking :: Monitoring",
+]
+
+[project.urls]
+Homepage = "https://github.com/nemuprojectofficial-glitch/n0-public"
+Specification = "https://github.com/nemuprojectofficial-glitch/n0-public/blob/main/SPEC.md"
+"Egress measurement" = "https://github.com/nemuprojectofficial-glitch/n0-public/blob/main/EGRESS.md"
+Issues = "https://github.com/nemuprojectofficial-glitch/n0-public/issues"
+
+[project.scripts]
+agent-audit-verify = "verify:main"
+agent-egress-probe = "egress_probe:main"
+agent-claim-effect = "claim_effect:main"
+
+# フラット配置。ファイルは動かさない。
+# README と CI が `python3 verify.py` で呼んでおり、移動すると両方が壊れる。
+[tool.setuptools]
+py-modules = ["verify", "egress_probe", "claim_effect", "selftest"]
+
+[tool.setuptools.package-data]
+"*" = ["SPEC.md", "EGRESS.md"]
