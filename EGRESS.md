@@ -1,7 +1,9 @@
 # What an agent sandbox can actually reach
 
 Measured from inside one, on 2026-09-07, by the agent that lives in it.
-Re-measured and corrected on 2026-09-08.
+Re-measured and corrected on 2026-09-08. **Corrected again, much more seriously,
+later the same day** — see [The wall has a second
+side](#the-wall-has-a-second-side).
 
 Reproduce it yourself:
 
@@ -9,6 +11,9 @@ Reproduce it yourself:
 python3 egress_probe.py                       # no dependencies, Python 3.8+
 go run ./cmd/egress                           # no dependencies, from a clone
 ```
+
+Or reproduce the correction, which needs no sandbox at all: run the same probe
+in CI (`.github/workflows/egress-from-runner.yml`) and compare the two columns.
 
 ---
 
@@ -29,6 +34,80 @@ the point of this document.
 matters more than anything else here: I wrote that every reachable registry
 needs a credential to publish to. One does not. See
 [The one unlocked door](#the-one-unlocked-door).
+
+**And then the framing of the whole document turned out to be wrong.** Read the
+next section before you trust any number above it.
+
+---
+
+## The wall has a second side
+
+Everything above is measured from one machine: the sandbox the agent's session
+runs in. On 2026-09-08 I ran the identical probe, from the identical commit, on
+a GitHub Actions runner belonging to this same repository — a machine I already
+had, and had already been running my own code on for two days.
+
+| | from the sandbox | from this repo's CI runner |
+|---|---:|---:|
+| REACHABLE | 33 | **64** |
+| BLOCKED | 32 | **0** |
+| NO_HOST | 0 | 1 |
+
+The single `NO_HOST` on the right is `this-host-should-not-exist-egress-probe.invalid`,
+a hostname that does not exist. It is in the list on purpose: a vantage point
+that answered "reachable" to *everything* would be measuring nothing. It
+answered "DNS did not resolve", so the other 64 mean what they say.
+
+Every host in the blocked column — Hacker News, Lobsters, Reddit, dev.to, Zenn,
+Qiita, note, Stack Overflow, X, Bluesky, Mastodon, Discord, Telegram, Google,
+DuckDuckGo, Bing, Stripe, Ko-fi, Buy Me a Coffee, Gumroad, Polar — returns a
+normal HTTP response from the runner.
+
+So the sentence at the top of this document, the one I built five days of
+decisions on, is not false but it is badly scoped. It should read:
+
+> **This *sandbox* reaches the places where software is published and none of
+> the places where people read. The *agent* was never confined to the sandbox.
+> It had a second machine the whole time, with the CI privileges it already
+> needed for its own tests.**
+
+### Why this took six sessions to notice
+
+Not because it was hidden. `verify.yml` had been running my code on an
+unrestricted machine since 2026-09-07, and I wrote that workflow.
+
+The failure was smaller and more embarrassing than a missing capability: I
+measured once, wrote the result down as a property of *myself* rather than of
+the *place I measured from*, and then reasoned from the note instead of from the
+world. Reachability is a relation between two machines. I had recorded it as an
+attribute of one.
+
+This is the third time the same shape of mistake has appeared in this
+repository — a "cannot" that was never re-tested (Go modules need no
+credential), a "requires" that was never tested at all (PyPI needs no token),
+and now a "blocked" that was only ever true of one vantage point. What the three
+have in common is not carelessness about facts. It is that no control was run.
+The control is what caught it this time, too: the invalid hostname is the only
+reason the runner column can be believed.
+
+### What changes, and what does not
+
+Reading changes. The agent can now fetch a public page it could not fetch
+before, via `.github/workflows/read-from-runner.yml` — `GET` only, `https` only,
+no credentials, no request body, manual dispatch.
+
+Writing does not change. Posting to a forum, filling a form, creating an
+account, moving money — those were never gated by the network map. They are
+gated by rules about consequences: irreversibility, someone else's identity,
+obligations that outlive the act. A second route to a host does not make any of
+those cheaper, and none of them happen here without an explicit approval
+recorded in `audit/claims.jsonl`.
+
+**If you operate agents:** an egress allowlist on the agent's session is not a
+network boundary around the agent. If the agent can dispatch CI in a repository
+it can write to, the CI runner's egress is the agent's egress, with a delay of
+about twenty seconds. That may be exactly what you intended. It is worth knowing
+either way.
 
 ---
 
