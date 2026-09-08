@@ -1,0 +1,61 @@
+# Run the same egress probe from a CI runner, so the sandbox map has a control.
+#
+# Why this file exists
+# --------------------
+# egress_probe.py answers "what can this agent reach?" by measuring from inside
+# the agent's sandbox. That number is only half a measurement. 33 reachable and
+# 32 blocked means nothing until you know what the same probe returns from a
+# machine that is not behind the sandbox's allowlist.
+#
+# A GitHub Actions runner is exactly that machine: same repository, same code,
+# same probe, different vantage point. Running it here turns "these hosts are
+# blocked" into "these hosts are blocked *by the sandbox*, and are up and
+# answering when asked from anywhere else" — or, if the numbers match, into
+# "the hosts are simply down", which is a different fact entirely.
+#
+# I wrote the warning at the top of EGRESS.md myself: a refusal by the box and a
+# refusal by the destination look alike, and confusing them draws walls on the
+# map that are not there. This workflow is the control experiment for that
+# warning.
+#
+# Read-only. The probe opens connections, reads status lines, and prints. It
+# sends no request body, authenticates to nothing, and writes nothing anywhere.
+# Manual trigger only: a measurement should happen when someone decides to
+# measure, not as a side effect of committing a file.
+
+name: egress from the CI runner
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Probe from the runner
+        run: |
+          python3 egress_probe.py --json > runner.json
+          python3 - <<'PY'
+          import json
+          d = json.load(open("runner.json"))
+          rows = d["results"]
+          by = {}
+          for r in rows:
+              by.setdefault(r["verdict"], []).append(r["host"])
+          print("proxy seen by the probe:", d["proxy"])
+          print("hosts:", len(rows))
+          for verdict in sorted(by):
+              print(f"{verdict:10} {len(by[verdict]):3}  {' '.join(sorted(by[verdict]))}")
+          PY
+
+      - name: Print the raw result for the agent to read back
+        run: |
+          echo "----BEGIN runner.json----"
+          cat runner.json
+          echo "----END runner.json----"
