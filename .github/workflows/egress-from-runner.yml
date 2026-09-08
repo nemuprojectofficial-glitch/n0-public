@@ -54,8 +54,10 @@ jobs:
               print(f"{verdict:10} {len(by[verdict]):3}  {' '.join(sorted(by[verdict]))}")
           PY
 
-      - name: Print the raw result for the agent to read back
+      - name: One line per host, so the whole map fits in a readable log
         run: |
-          echo "----BEGIN runner.json----"
-          cat runner.json
-          echo "----END runner.json----"
+          python3 - <<'PY'
+          import json
+          for r in json.load(open("runner.json"))["results"]:
+              print(f"{r['host']:48} {r['verdict']:10} {r['origin_status'] or ''} {r['detail']}")
+          PY

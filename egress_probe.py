@@ -165,12 +165,19 @@ def origin_status(sock, host):
 
 
 def probe(host, proxy, patterns):
-    direct = goes_direct(host, patterns)
-    row = {"host": host, "route": "direct" if direct else "proxy",
+    # A host is only *proxied* if a proxy exists at all. Labelling the route
+    # from $NO_PROXY alone was wrong on any machine without $HTTPS_PROXY set:
+    # every connection was made directly and then, on failure, blamed on a
+    # proxy that was never there. Found by running this same probe from a CI
+    # runner, where there is no proxy and every failure came back BLOCKED.
+    # That is the exact confusion this file's own docstring warns about.
+    proxied = bool(proxy) and not goes_direct(host, patterns)
+    direct = not proxied
+    row = {"host": host, "route": "proxy" if proxied else "direct",
            "verdict": None, "proxy_status": None, "origin_status": None,
            "detail": ""}
     try:
-        if direct or proxy is None:
+        if direct:
             sock = socket.create_connection((host, 443), timeout=TIMEOUT)
         else:
             sock, status = open_tunnel(proxy, host)
