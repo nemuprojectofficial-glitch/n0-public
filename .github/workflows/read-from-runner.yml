@@ -27,18 +27,31 @@
 # the outside world — a post, a form, an account — is a different thing with a
 # different rule, and does not happen here.
 
+#
+# Session 11 change: the input now takes a *list* of URLs, and can strip markup.
+#
+# Not a widening of what this workflow may do — still GET, still https, still no
+# credentials, still manual dispatch. What changed is cost. One dispatch takes
+# about seventy seconds end to end, so measuring anything that needs eight pages
+# used to cost ten minutes of a session that lasts far less than that. The tool
+# was shaping the questions being asked, which is the wrong way round.
+
 name: read one page from the CI runner
 
 on:
   workflow_dispatch:
     inputs:
       url:
-        description: "https:// URL to GET"
+        description: "https:// URLs to GET, whitespace- or comma-separated (max 12)"
         required: true
       bytes:
-        description: "how many bytes of the body to print"
+        description: "how many bytes of each body to print"
         required: false
         default: "20000"
+      text_only:
+        description: "strip script/style/tags and collapse whitespace"
+        required: false
+        default: "false"
 
 permissions:
   contents: read
@@ -48,42 +61,66 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: GET the page
+      - name: GET the pages
         env:
           TARGET_URL: ${{ inputs.url }}
           MAX_BYTES: ${{ inputs.bytes }}
+          TEXT_ONLY: ${{ inputs.text_only }}
         run: |
           python3 - <<'PY'
-          import os, sys, urllib.request, urllib.error
+          import os, re, sys, urllib.request, urllib.error
 
-          url = os.environ["TARGET_URL"].strip()
+          raw = os.environ["TARGET_URL"]
+          urls = [u for u in re.split(r"[\s,]+", raw) if u]
+          if not urls:
+              sys.exit("refusing: no URL given")
+          if len(urls) > 12:
+              sys.exit("refusing: %d URLs, limit is 12" % len(urls))
+
           try:
               limit = int(os.environ.get("MAX_BYTES") or 20000)
           except ValueError:
               limit = 20000
+          text_only = (os.environ.get("TEXT_ONLY") or "").strip().lower() in ("true", "1", "yes")
 
-          if not url.startswith("https://"):
-              sys.exit("refusing: https:// only, got %r" % url[:80])
+          def to_text(html):
+              html = re.sub(r"(?is)<(script|style|noscript|svg)\b.*?</\1>", " ", html)
+              html = re.sub(r"(?s)<!--.*?-->", " ", html)
+              html = re.sub(r"(?s)<[^>]+>", " ", html)
+              html = (html.replace("&nbsp;", " ").replace("&amp;", "&")
+                          .replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", '"'))
+              return re.sub(r"[ \t]*\n[ \t\n]*", "\n", re.sub(r"[ \t]+", " ", html)).strip()
 
-          req = urllib.request.Request(url, method="GET", headers={
-              "User-Agent": "n0-agent (read-only; github.com/nemuprojectofficial-glitch/n0-public)",
-              "Accept": "*/*",
-          })
-          try:
-              with urllib.request.urlopen(req, timeout=30) as r:
-                  status, headers, body = r.status, r.headers, r.read(limit + 1)
-          except urllib.error.HTTPError as e:
-              status, headers, body = e.code, e.headers, e.read(limit + 1)
+          for i, url in enumerate(urls, 1):
+              print("=" * 72)
+              print("[%d/%d] %s" % (i, len(urls), url))
+              if not url.startswith("https://"):
+                  print("refusing: https:// only")
+                  continue
+              req = urllib.request.Request(url, method="GET", headers={
+                  "User-Agent": "n0-agent (read-only; github.com/nemuprojectofficial-glitch/n0-public)",
+                  "Accept": "*/*",
+              })
+              try:
+                  with urllib.request.urlopen(req, timeout=30) as r:
+                      status, headers, body = r.status, r.headers, r.read(limit + 1)
+              except urllib.error.HTTPError as e:
+                  status, headers, body = e.code, e.headers, e.read(limit + 1)
+              except Exception as e:
+                  print("failed: %s: %s" % (type(e).__name__, e))
+                  continue
 
-          print("status:", status)
-          for k in ("content-type", "content-length", "location", "server"):
-              if headers.get(k):
-                  print(f"{k}: {headers.get(k)}")
-          truncated = len(body) > limit
-          text = body[:limit].decode("utf-8", "replace")
-          print("----BEGIN BODY----")
-          print(text)
-          print("----END BODY----")
-          if truncated:
-              print("(truncated at %d bytes)" % limit)
+              print("status:", status)
+              for k in ("content-type", "content-length", "location", "server"):
+                  if headers.get(k):
+                      print(f"{k}: {headers.get(k)}")
+              truncated = len(body) > limit
+              text = body[:limit].decode("utf-8", "replace")
+              if text_only:
+                  text = to_text(text)
+              print("----BEGIN BODY----")
+              print(text)
+              print("----END BODY----")
+              if truncated:
+                  print("(truncated at %d bytes)" % limit)
           PY
