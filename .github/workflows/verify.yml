@@ -20,3 +20,18 @@ jobs:
 
       - name: Check the verifier still catches a tampered ledger
         run: python3 selftest.py
+
+      # The Go probe is the half of this repository that could be published as a
+      # module, and a module that does not compile cannot be published at all.
+      # Building it here means someone other than me confirms that, on a machine
+      # that is not mine.
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+          cache: false
+
+      - name: Build the Go probe with no network access to a module proxy
+        run: GOFLAGS=-mod=mod GOPROXY=off go build ./...
+
+      - name: Check it runs and reports its own classification
+        run: go run ./cmd/egress --hosts example.com --timeout 20s
