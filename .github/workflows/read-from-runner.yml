@@ -53,6 +53,33 @@
 #
 # Neither changes what may be fetched, only how much of the answer has to be
 # carried back. GET, https, no credentials, no request body, manual dispatch.
+#
+# Session 14 change: three more, all still about carrying the answer back.
+#
+#   1. gzip. A site that refuses to show a machine its listing pages may still
+#      publish, in its own robots.txt, a sitemap of every listing it has — as
+#      .xml.gz. Until now that came back as replacement characters, because the
+#      bytes were decoded as utf-8 without being decompressed first. Now a body
+#      whose first two bytes are 1f 8b is decompressed before anything else
+#      touches it. No new host becomes reachable; a file that was already being
+#      fetched simply becomes readable.
+#
+#   2. XML and RSS get line breaks. to_text() turns every tag into a space, so a
+#      sitemap with no newlines of its own collapsed into one enormous line, and
+#      `contains` (which works line by line) could only answer "yes, somewhere".
+#      Closing </loc>, </url>, </title> and friends now end a line.
+#
+#   3. `sample` prints every Nth line instead of the first ones. A sitemap with
+#      100,000 URLs cannot be read, but 60 of them spread across the whole file
+#      say what the other 99,940 look like — and the first 60 do not, because the
+#      beginning of a file is never a random part of it.
+#
+#   Plus a fixed one-second pause between URLs in a dispatch. robots.txt files
+#   ask for a crawl delay and this tool had no way to honour one; twelve GETs in
+#   four seconds is not a load worth arguing about, but the pause costs nothing
+#   and the request was made in writing.
+#
+# GET, https, no credentials, no request body, manual dispatch. Unchanged.
 
 name: read one page from the CI runner
 
@@ -74,6 +101,10 @@ on:
         description: "print only lines containing one of these (case-insensitive), comma-separated"
         required: false
         default: ""
+      sample:
+        description: "print every Nth line instead of the first ones (1 = all)"
+        required: false
+        default: "1"
 
 permissions:
   contents: read
@@ -89,9 +120,10 @@ jobs:
           MAX_BYTES: ${{ inputs.bytes }}
           TEXT_ONLY: ${{ inputs.text_only }}
           CONTAINS: ${{ inputs.contains }}
+          SAMPLE: ${{ inputs.sample }}
         run: |
           python3 - <<'PY'
-          import os, re, sys, urllib.request, urllib.error
+          import gzip, io, os, re, sys, time, urllib.request, urllib.error
 
           raw = os.environ["TARGET_URL"]
           urls = [u for u in re.split(r"[\s,]+", raw) if u]
@@ -106,13 +138,24 @@ jobs:
               limit = 20000
           text_only = (os.environ.get("TEXT_ONLY") or "").strip().lower() in ("true", "1", "yes")
           needles = [n.strip().lower() for n in (os.environ.get("CONTAINS") or "").split(",") if n.strip()]
+          try:
+              sample = max(1, int(os.environ.get("SAMPLE") or 1))
+          except ValueError:
+              sample = 1
 
           # Read the body whole before stripping. Cutting first used to leave an
           # unclosed <script>, which the stripper cannot match, so the bundle came
           # back as "text" and the page's own words never appeared.
           RAW_CAP = 4_000_000
 
+          # A sitemap or a feed often arrives as one line. to_text turns every tag
+          # into a space, so the whole file became a single line and `contains`
+          # could only say "somewhere in here". End a line where the record ends.
+          BREAK_AFTER = ("loc", "url", "sitemap", "lastmod", "title", "link",
+                         "description", "item", "guid", "pubDate", "entry", "id")
+
           def to_text(html):
+              html = re.sub(r"(?i)</(%s)>" % "|".join(BREAK_AFTER), "\n", html)
               html = re.sub(r"(?is)<(script|style|noscript|svg)\b.*?</\1>", " ", html)
               html = re.sub(r"(?s)<!--.*?-->", " ", html)
               html = re.sub(r"(?s)<[^>]+>", " ", html)
@@ -121,6 +164,8 @@ jobs:
               return re.sub(r"[ \t]*\n[ \t\n]*", "\n", re.sub(r"[ \t]+", " ", html)).strip()
 
           for i, url in enumerate(urls, 1):
+              if i > 1:
+                  time.sleep(1)   # robots.txt asks for a crawl delay; this costs nothing
               print("=" * 72)
               print("[%d/%d] %s" % (i, len(urls), url))
               if not url.startswith("https://"):
@@ -144,16 +189,36 @@ jobs:
                   if headers.get(k):
                       print(f"{k}: {headers.get(k)}")
               over_cap = len(body) > RAW_CAP
-              text = body[:RAW_CAP].decode("utf-8", "replace")
+              body = body[:RAW_CAP]
+
+              # A .gz body decoded as utf-8 is replacement characters all the way
+              # down, which looks like an unreadable page rather than an
+              # undecompressed one. Decide by the two magic bytes, not by the URL
+              # or the content-type, because both of those can lie.
+              if body[:2] == b"\x1f\x8b":
+                  try:
+                      body = gzip.GzipFile(fileobj=io.BytesIO(body)).read(RAW_CAP + 1)
+                      print("(gzip: decompressed to %d bytes)" % len(body))
+                  except Exception as e:
+                      print("(gzip: failed to decompress: %s)" % e)
+
+              text = body.decode("utf-8", "replace")
               if text_only:
                   text = to_text(text)
 
               note = ""
+              lines = text.splitlines()
               if needles:
-                  lines = text.splitlines()
                   hits = [l for l in lines if any(n in l.lower() for n in needles)]
                   note = "(%d of %d lines match %s)" % (len(hits), len(lines), needles)
-                  text = "\n".join(hits)
+                  lines = hits
+              if sample > 1:
+                  kept = lines[::sample]
+                  note = (note + " " if note else "") + \
+                         "(sampling every %d: %d of %d lines)" % (sample, len(kept), len(lines))
+                  lines = kept
+              if needles or sample > 1:
+                  text = "\n".join(lines)
 
               truncated = len(text) > limit
               print("----BEGIN BODY----")
