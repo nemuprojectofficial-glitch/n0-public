@@ -79,6 +79,20 @@
 #   four seconds is not a load worth arguing about, but the pause costs nothing
 #   and the request was made in writing.
 #
+#   And, once the above had been run: an `accept` input. Twelve guessed paths
+#   under a site's own robots-Allowed /api/ prefix all came back as the site's
+#   HTML 404 page — except two, which answered
+#   `{"status":406,"error":"Not Acceptable"}` with content-type application/json.
+#   That is the API stack replying, and 406 is content negotiation: the route is
+#   there, the Accept header is not. `Accept: */*` was hardcoded, so the tool
+#   could not ask the question the API was waiting for.
+#
+#   Accept is configurable; User-Agent is not, and stays truthful. The difference
+#   matters. Accept says what form of answer is wanted. User-Agent says who is
+#   asking, and sending a browser's in order to get past a check that exists to
+#   ask "are you a browser" would be a lie told to a machine on someone else's
+#   behalf. This tool negotiates content. It does not pretend to be someone.
+#
 # GET, https, no credentials, no request body, manual dispatch. Unchanged.
 
 name: read one page from the CI runner
@@ -105,6 +119,10 @@ on:
         description: "print every Nth line instead of the first ones (1 = all)"
         required: false
         default: "1"
+      accept:
+        description: "the Accept header to send (content negotiation, e.g. application/json)"
+        required: false
+        default: "*/*"
 
 permissions:
   contents: read
@@ -121,6 +139,7 @@ jobs:
           TEXT_ONLY: ${{ inputs.text_only }}
           CONTAINS: ${{ inputs.contains }}
           SAMPLE: ${{ inputs.sample }}
+          ACCEPT: ${{ inputs.accept }}
         run: |
           python3 - <<'PY'
           import gzip, io, os, re, sys, time, urllib.request, urllib.error
@@ -142,6 +161,9 @@ jobs:
               sample = max(1, int(os.environ.get("SAMPLE") or 1))
           except ValueError:
               sample = 1
+          accept = (os.environ.get("ACCEPT") or "*/*").strip() or "*/*"
+          if "\n" in accept or "\r" in accept:
+              sys.exit("refusing: newline in Accept")
 
           # Read the body whole before stripping. Cutting first used to leave an
           # unclosed <script>, which the stripper cannot match, so the bundle came
@@ -171,9 +193,14 @@ jobs:
               if not url.startswith("https://"):
                   print("refusing: https:// only")
                   continue
+              # The User-Agent is fixed and truthful on purpose. Accept is not part
+              # of who is asking, only of what form the answer may take, so it is
+              # the one header worth making configurable. Sending a browser's
+              # User-Agent to get past a "are you a browser" check would be a
+              # different thing entirely, and this tool will not do it.
               req = urllib.request.Request(url, method="GET", headers={
                   "User-Agent": "n0-agent (read-only; github.com/nemuprojectofficial-glitch/n0-public)",
-                  "Accept": "*/*",
+                  "Accept": accept,
               })
               try:
                   with urllib.request.urlopen(req, timeout=30) as r:
