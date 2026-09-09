@@ -35,6 +35,24 @@
 # about seventy seconds end to end, so measuring anything that needs eight pages
 # used to cost ten minutes of a session that lasts far less than that. The tool
 # was shaping the questions being asked, which is the wrong way round.
+#
+# Session 13 change: two fixes, both about cost, neither about reach.
+#
+#   1. text_only used to run on the *truncated* body. If the cut landed inside a
+#      <script> block, the closing tag went with it, the stripper no longer had
+#      a pair to match, and the whole minified bundle came back as "text". Asked
+#      for the twelve pages of session 13 with bytes=8000, four of them returned
+#      nothing but JavaScript — the page's own words started after byte 8000 and
+#      were never reached. So the body is now read whole (up to a hard cap),
+#      stripped, and *then* cut to `bytes`. `bytes` now budgets what is printed,
+#      which is what it was always meant to mean.
+#
+#   2. `contains` prints only the lines that match, with the total line count, so
+#      a 110 KB terms-of-service page can be asked one question without being
+#      pulled through the log in full.
+#
+# Neither changes what may be fetched, only how much of the answer has to be
+# carried back. GET, https, no credentials, no request body, manual dispatch.
 
 name: read one page from the CI runner
 
@@ -45,13 +63,17 @@ on:
         description: "https:// URLs to GET, whitespace- or comma-separated (max 12)"
         required: true
       bytes:
-        description: "how many bytes of each body to print"
+        description: "how many characters of each body to PRINT (after stripping)"
         required: false
         default: "20000"
       text_only:
         description: "strip script/style/tags and collapse whitespace"
         required: false
         default: "false"
+      contains:
+        description: "print only lines containing one of these (case-insensitive), comma-separated"
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -66,6 +88,7 @@ jobs:
           TARGET_URL: ${{ inputs.url }}
           MAX_BYTES: ${{ inputs.bytes }}
           TEXT_ONLY: ${{ inputs.text_only }}
+          CONTAINS: ${{ inputs.contains }}
         run: |
           python3 - <<'PY'
           import os, re, sys, urllib.request, urllib.error
@@ -82,6 +105,12 @@ jobs:
           except ValueError:
               limit = 20000
           text_only = (os.environ.get("TEXT_ONLY") or "").strip().lower() in ("true", "1", "yes")
+          needles = [n.strip().lower() for n in (os.environ.get("CONTAINS") or "").split(",") if n.strip()]
+
+          # Read the body whole before stripping. Cutting first used to leave an
+          # unclosed <script>, which the stripper cannot match, so the bundle came
+          # back as "text" and the page's own words never appeared.
+          RAW_CAP = 4_000_000
 
           def to_text(html):
               html = re.sub(r"(?is)<(script|style|noscript|svg)\b.*?</\1>", " ", html)
@@ -103,9 +132,9 @@ jobs:
               })
               try:
                   with urllib.request.urlopen(req, timeout=30) as r:
-                      status, headers, body = r.status, r.headers, r.read(limit + 1)
+                      status, headers, body = r.status, r.headers, r.read(RAW_CAP + 1)
               except urllib.error.HTTPError as e:
-                  status, headers, body = e.code, e.headers, e.read(limit + 1)
+                  status, headers, body = e.code, e.headers, e.read(RAW_CAP + 1)
               except Exception as e:
                   print("failed: %s: %s" % (type(e).__name__, e))
                   continue
@@ -114,13 +143,26 @@ jobs:
               for k in ("content-type", "content-length", "location", "server"):
                   if headers.get(k):
                       print(f"{k}: {headers.get(k)}")
-              truncated = len(body) > limit
-              text = body[:limit].decode("utf-8", "replace")
+              over_cap = len(body) > RAW_CAP
+              text = body[:RAW_CAP].decode("utf-8", "replace")
               if text_only:
                   text = to_text(text)
+
+              note = ""
+              if needles:
+                  lines = text.splitlines()
+                  hits = [l for l in lines if any(n in l.lower() for n in needles)]
+                  note = "(%d of %d lines match %s)" % (len(hits), len(lines), needles)
+                  text = "\n".join(hits)
+
+              truncated = len(text) > limit
               print("----BEGIN BODY----")
-              print(text)
+              if note:
+                  print(note)
+              print(text[:limit])
               print("----END BODY----")
               if truncated:
-                  print("(truncated at %d bytes)" % limit)
+                  print("(printed %d of %d characters)" % (limit, len(text)))
+              if over_cap:
+                  print("(body exceeded the %d byte read cap)" % RAW_CAP)
           PY
