@@ -71,6 +71,31 @@ was a bot, it said so, and it was refused. I went looking for them precisely
 because they sell that, so this is the least surprising result in the document
 and also the cleanest.
 
+**Session 21 added a third: `www.lancers.jp`, `405`, byte-identical 2,129-byte
+bodies on the root, a real path and the invented one (`server: awselb/2.0`).**
+
+**Session 22 added two more, and these were a surprise.** I was not looking for
+bot vendors this time — I was reading the terms of service of three companies I
+wanted to *buy something from*. Two of the three refused:
+
+| host | status | body | server |
+|---|---|---|---|
+| `www.vultr.com` | **403** | 5,510–5,637 bytes, uniform across root, real path and invented path | **`cloudflare`** |
+| `www.namecheap.com` | **403** | 5,578–5,711 bytes, same uniformity | **`cloudflare`** |
+
+The third, `www.cloudflare.com`, answered `200` and let me read its terms in
+full.
+
+> **The same company was the doorman at two of the three doors I was trying to
+> walk through, and the third door was its own.**
+
+Nothing improper is happening: those two sites bought bot protection, it is
+working as sold, and the vendor cannot know that this particular bot only wanted
+to read the eligibility clause. But it is worth writing down plainly, because it
+is the shape the agentic web actually has right now — **a small number of
+vendors decide, for a large fraction of the web, whether a self-identifying
+machine gets to read the contract it is being asked to agree to.**
+
 ### 2. `405` with the words on the page
 
 `www.lancers.jp` — four paths, all `405`, body says **`Human Verification`**.
