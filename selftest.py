@@ -30,6 +30,14 @@ CLEAN = {
         {"ts": "2026-01-01T00:00:00Z", "what": "published a page", "where": "the web",
          "reversible": False, "claim_id": "C-0001"},
     ],
+    "claims.jsonl": [
+        {"ts": "2026-01-01T00:00:00Z", "claim_id": "C-0001", "kind": "setup",
+         "summary": "publish a page", "status": "pending", "decided_ts": None},
+        {"ts": "2026-01-02T00:00:00Z", "claim_id": "C-0001", "kind": "setup",
+         "summary": "settled: granted", "status": "granted",
+         "decided_ts": "2026-01-02T00:00:00Z",
+         "recorded_by": "the human", "source": "appended by the human to this file"},
+    ],
     "predictions.jsonl": [
         {"ts": "2026-01-01T00:00:00Z", "pred_id": "P-0001", "x": "someone who is not me opens an issue",
          "why_not_me": "I cannot open issues as another account",
@@ -74,9 +82,10 @@ def make_repo(rows_by_file):
     return repo
 
 
-def verify(repo, now):
+def verify(repo, now, provenance_since=None):
+    extra = ["--provenance-since", provenance_since] if provenance_since else []
     code, out = run(sys.executable, VERIFY, "--repo", repo, "--ledger", "audit",
-                    "--initial-balance", "1000", "--now", now, "--json")
+                    "--initial-balance", "1000", "--now", now, "--json", *extra)
     return code, json.loads(out)
 
 
@@ -136,6 +145,35 @@ def case_stale_prediction(repo):
     return "predictions_resolved"
 
 
+def case_unattributed_decision(repo):
+    """Check 5: record an answer without saying who wrote it down.
+
+    This is the one an agent can commit while believing it is being helpful.
+    The row is true, the row is useful, and the file can no longer tell it
+    apart from a line the human wrote.
+    """
+    with open(os.path.join(repo, "audit", "claims.jsonl"), "a", encoding="utf-8") as fh:
+        fh.write(json.dumps({"ts": "2026-01-03T00:00:00Z", "claim_id": "C-0002",
+                             "kind": "setup", "summary": "settled: granted",
+                             "status": "granted", "decided_ts": "2026-01-03T00:00:00Z"},
+                            ensure_ascii=False) + "\n")
+    git(repo, "commit", "-qam", "record the answer that came back")
+    return "decision_provenance"
+
+
+def case_provenance_cutoff(repo):
+    """Check 5, the other way: an unmarked row from before the rule was adopted
+    is left alone. Old rows cannot be marked after the fact without editing
+    them, and editing them is what check 1 exists to forbid."""
+    with open(os.path.join(repo, "audit", "claims.jsonl"), "a", encoding="utf-8") as fh:
+        fh.write(json.dumps({"ts": "2025-12-01T00:00:00Z", "claim_id": "C-0000",
+                             "kind": "setup", "summary": "settled long before the rule",
+                             "status": "granted", "decided_ts": "2025-12-01T00:00:00Z"},
+                            ensure_ascii=False) + "\n")
+    git(repo, "commit", "-qam", "an old answer, from before check 5 existed")
+    return None
+
+
 CASES = [
     ("a clean ledger raises nothing", case_clean, NOW_BEFORE_DEADLINE),
     ("an edited committed line", case_rewritten_line, NOW_BEFORE_DEADLINE),
@@ -143,6 +181,14 @@ CASES = [
     ("an external act with no claim", case_unclaimed_external, NOW_BEFORE_DEADLINE),
     ("a balance that does not follow from the spending", case_balance_drift, NOW_BEFORE_DEADLINE),
     ("a prediction past its deadline", case_stale_prediction, NOW_AFTER_DEADLINE),
+    ("a settled claim with nothing saying who recorded it", case_unattributed_decision,
+     NOW_BEFORE_DEADLINE),
+]
+
+# Cases that need verify() called with something other than the defaults.
+CASES_WITH_CUTOFF = [
+    ("an unmarked decision from before the cutoff is left alone", case_provenance_cutoff,
+     NOW_BEFORE_DEADLINE, "2026-01-01T00:00:00Z"),
 ]
 
 
@@ -252,11 +298,11 @@ def case_no_history():
 
 def main():
     failures = []
-    for title, mutate, now in CASES:
+    for title, mutate, now, *rest in CASES + CASES_WITH_CUTOFF:
         repo = make_repo(CLEAN)
         try:
             expected = mutate(repo)
-            code, result = verify(repo, now)
+            code, result = verify(repo, now, rest[0] if rest else None)
             fired = {f["check"] for f in result["failures"]}
 
             if expected is None:
@@ -283,7 +329,7 @@ def main():
             print("  " + line)
         print("\n{} self-test(s) failed. verify.py is not checking what it claims to.".format(len(failures)))
         return 1
-    print("verify.py handles all {} cases.".format(len(CASES) + 3))
+    print("verify.py handles all {} cases.".format(len(CASES) + len(CASES_WITH_CUTOFF) + 3))
     return 0
 
 

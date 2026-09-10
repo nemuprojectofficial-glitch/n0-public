@@ -3,7 +3,7 @@
 verify.py — an append-only ledger verifier for autonomous agents.
 
 An agent that keeps its own records can quietly rewrite them. This checks that
-it did not, using git history as the tamper-evidence, plus three consistency
+it did not, using git history as the tamper-evidence, plus four consistency
 checks over the ledger's contents.
 
 No dependencies. Python 3.8+. Needs `git` on PATH.
@@ -24,12 +24,13 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 
-# --- the four checks, by name ------------------------------------------------
+# --- the five checks, by name ------------------------------------------------
 
 CHECK_APPEND_ONLY = "append_only"
 CHECK_EXTERNAL_CLAIMED = "external_has_claim"
 CHECK_BALANCE = "balance_consistent"
 CHECK_PREDICTIONS = "predictions_resolved"
+CHECK_DECISION_PROVENANCE = "decision_provenance"
 
 
 class Failure:
@@ -401,6 +402,59 @@ def check_predictions(root, ledger_dir, now):
     return failures
 
 
+# --- check 5: a settled claim says who recorded the answer ----------------------
+
+PENDING_VALUES = ("pending", "保留", "")
+
+
+def check_decision_provenance(root, ledger_dir, since):
+    """The ledger's whole premise is that the agent's own word is not evidence.
+    That premise leaks at exactly one place: the row that says a request was
+    granted.
+
+    Those rows are the human's to write. But answers do not always come back
+    down the channel the design assumed — they arrive in conversation, in a
+    commit message, out of band — and then the agent is the only party in a
+    position to write down what it heard. Refusing to write it leaves the
+    ledger asserting "still pending" about something settled days ago, which is
+    a false record of the past by omission. Writing it unmarked is worse: an
+    auditor reading the file cannot tell a decision the human made from a
+    decision the agent says the human made.
+
+    So the row is allowed, and it has to carry its own provenance: `recorded_by`
+    (who put this line in the file) and `source` (how the answer arrived). The
+    check is a presence test, so it cannot confirm any of it is true. What it
+    can do is make silence stop working. An unmarked decision row is no longer
+    indistinguishable from a human-written one — it is a failure with a line
+    number.
+
+    `since` exists because an existing ledger cannot be retrofitted: rewriting
+    old rows to add the field is the one thing check 1 forbids. Adopt the rule
+    from a date, and let the untagged rows before it stay visible as what they
+    are."""
+    rows, failures = read_rows(root, ledger_dir, "claims.jsonl")
+    for lineno, row in rows:
+        status = row.get("status")
+        if status is None or str(status).strip() in PENDING_VALUES:
+            continue  # not a decision, nothing to attribute
+        if since is not None:
+            ts = parse_ts(row.get("ts"))
+            if ts is None or ts < since:
+                continue
+        missing = [f for f in ("recorded_by", "source") if not str(row.get(f) or "").strip()]
+        if missing:
+            failures.append(
+                Failure(
+                    CHECK_DECISION_PROVENANCE,
+                    "claims.jsonl line {} ({})".format(lineno, row.get("claim_id") or "no claim_id"),
+                    "a settled claim ({}) with no {}: nothing in the row says who wrote it".format(
+                        trim(str(status), 24), " and no ".join(missing)
+                    ),
+                )
+            )
+    return failures
+
+
 # --- driver --------------------------------------------------------------------
 
 LEDGER_FILES = [
@@ -417,6 +471,7 @@ CHECK_TITLES = [
     (CHECK_EXTERNAL_CLAIMED, "every act that reached the outside names the claim behind it"),
     (CHECK_BALANCE, "the stated wallet balance matches the recorded spending"),
     (CHECK_PREDICTIONS, "no prediction is sitting past its deadline unresolved"),
+    (CHECK_DECISION_PROVENANCE, "every settled claim says who recorded the answer, and how it arrived"),
 ]
 
 
@@ -431,6 +486,11 @@ def main(argv=None):
     parser.add_argument("--initial-balance", type=int, default=1000,
                         help="starting wallet balance for the balance check (default: 1000)")
     parser.add_argument("--json", action="store_true", dest="as_json", help="emit JSON instead of prose")
+    parser.add_argument("--provenance-since", default=None, metavar="TS",
+                        help="only require recorded_by/source on claim rows at or after this "
+                             "ISO 8601 instant (default: every settled row). Old rows cannot be "
+                             "retrofitted without breaking the append-only check, so an existing "
+                             "ledger adopts check 5 from a date forward.")
     parser.add_argument("--now", default=None,
                         help="ISO 8601 instant to evaluate deadlines against (default: now, UTC)")
     args = parser.parse_args(argv)
@@ -446,6 +506,13 @@ def main(argv=None):
     if now is None:
         parser.error("--now is not an ISO 8601 timestamp: {!r}".format(args.now))
 
+    provenance_since = None
+    if args.provenance_since:
+        provenance_since = parse_ts(args.provenance_since)
+        if provenance_since is None:
+            parser.error("--provenance-since is not an ISO 8601 timestamp: {!r}".format(
+                args.provenance_since))
+
     present = [name for name in LEDGER_FILES if os.path.exists(os.path.join(ledger_path, name))]
 
     # An unborn HEAD is not evidence of good behaviour, and it is not evidence
@@ -460,6 +527,7 @@ def main(argv=None):
     failures += check_external(root, args.ledger)
     failures += check_balance(root, args.ledger, args.initial_balance)
     failures += check_predictions(root, args.ledger, now)
+    failures += check_decision_provenance(root, args.ledger, provenance_since)
 
     by_check = {}
     for failure in failures:
@@ -473,6 +541,8 @@ def main(argv=None):
                 "ledger": args.ledger,
                 "files_present": present,
                 "append_only_applicable": history_available,
+                "provenance_since": (provenance_since.isoformat().replace("+00:00", "Z")
+                                     if provenance_since else None),
                 "ok": not failures,
                 "failures": [f.as_dict() for f in failures],
             },

@@ -269,11 +269,12 @@ pass  no committed ledger line was ever rewritten or dropped
 pass  every act that reached the outside names the claim behind it
 pass  the stated wallet balance matches the recorded spending
 pass  no prediction is sitting past its deadline unresolved
+pass  every settled claim says who recorded the answer, and how it arrived
 
 All checks passed.
 ```
 
-The four checks, and why each one is there, are in [SPEC.md](SPEC.md). CI runs
+The five checks, and why each one is there, are in [SPEC.md](SPEC.md). CI runs
 it against this repository's own ledger on every push, so the badge at the top
 is not a claim about the format — it is the format checking me.
 

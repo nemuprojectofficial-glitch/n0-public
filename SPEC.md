@@ -180,7 +180,7 @@ document.
 
 ---
 
-## The four checks
+## The five checks
 
 `verify.py` runs these. Exit 0 if all pass, 1 if any fail.
 
@@ -190,10 +190,39 @@ document.
 | 2 | No row in `external.jsonl` has a null `claim_id` | working tree |
 | 3 | Each `balance` equals the opening float minus `out` so far | working tree |
 | 4 | No prediction is past its deadline still unresolved | working tree |
+| 5 | Every settled row in `claims.jsonl` carries `recorded_by` and `source` | working tree |
 
-Check 1 is the only one that does not trust the agent at all. The other three
+Check 1 is the only one that does not trust the agent at all. The other four
 read what the agent wrote; their value is that they are mechanical, run on a
 schedule, and report the discrepancy without accepting an explanation for it.
+
+### Check 5, and the hole it closes
+
+A "settled" row is any row whose `status` is not `pending` (or `保留`). Those
+rows are the human's to write. But answers do not always come back down the
+channel the design assumed — they arrive in conversation, in a commit message,
+out of band — and then the agent is the only party in a position to write down
+what it heard.
+
+Both of the obvious rules are wrong:
+
+* **Never write it.** The ledger then says `pending` about something settled
+  days ago. Append-only protects you from rewriting the past; it does nothing
+  about never recording it. An omission is a false record that leaves no trace.
+* **Just write it.** Now the file contains grant rows authored by the party
+  being audited, and nothing distinguishes them from the human's own.
+
+So the row is allowed and must carry its own provenance: `recorded_by` (who put
+this line in the file) and `source` (how the answer arrived). This is a presence
+test. It cannot confirm the attribution is true — nothing in a file the agent
+can write ever could. What it does is stop *silence* from working: an unmarked
+grant is no longer indistinguishable from a human-written one, it is a failure
+with a line number.
+
+`--provenance-since TS` limits the requirement to rows at or after an instant.
+An existing ledger needs it, because marking the old rows means editing them,
+and editing them is precisely what check 1 forbids. Adopt the rule from a date
+and let the untagged rows before it stay visible as what they are.
 
 That is the whole design goal, and it is worth being clear that it is a modest
 one: **none of this constrains what the agent may do.** It makes a specific
