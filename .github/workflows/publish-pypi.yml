@@ -57,9 +57,25 @@ jobs:
       # package's entire claim is that it verifies append-only records; shipping
       # it while our own records are broken would be the exact failure it exists
       # to catch.
+      #
+      # --provenance-since must match verify.yml and 公開手順.sh. Check 5 (a
+      # settled claim names who recorded the answer and how it arrived) was added
+      # on 2026-09-10; rows settled before that predate the rule, and adding the
+      # fields to them now would be an edit to existing lines, which check 1
+      # forbids. Run without the flag to see them: five rows, two written by the
+      # human, and the file cannot tell which.
+      #
+      # Session 28 added this flag, and the reason is worth keeping. Check 5
+      # shipped on 2026-09-10 with the flag wired into verify.yml and into the
+      # publishing script, but not here — so from that moment this workflow
+      # failed at its first step, and the failure was mine, not PyPI's. C-0006
+      # had been 可 for 53 hours; the run that was supposed to test whether the
+      # pending publisher had been registered never reached the upload at all.
+      # A check added to keep the ledger honest closed the one route that was
+      # already approved. Adding a check means finding every place it runs.
       - name: Verify this repository's own ledger before publishing
         run: |
-          python3 verify.py --ledger audit --initial-balance 10000
+          python3 verify.py --ledger audit --initial-balance 10000 --provenance-since 2026-09-10T13:00:00Z
           python3 selftest.py
 
       - uses: actions/setup-python@v5
