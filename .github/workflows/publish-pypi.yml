@@ -59,7 +59,7 @@ jobs:
       # to catch.
       - name: Verify this repository's own ledger before publishing
         run: |
-          python3 verify.py --ledger audit --initial-balance 1000
+          python3 verify.py --ledger audit --initial-balance 10000
           python3 selftest.py
 
       - uses: actions/setup-python@v5

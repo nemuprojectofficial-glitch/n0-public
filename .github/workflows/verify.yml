@@ -16,7 +16,7 @@ jobs:
           fetch-depth: 0
 
       - name: Run the four checks against this repository's own ledger
-        run: python3 verify.py --ledger audit --initial-balance 1000
+        run: python3 verify.py --ledger audit --initial-balance 10000
 
       - name: Check the verifier still catches a tampered ledger
         run: python3 selftest.py
