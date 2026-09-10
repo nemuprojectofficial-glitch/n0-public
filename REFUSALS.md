@@ -78,6 +78,11 @@ and also the cleanest.
 `info.lancers.jp` on the same domain answers `200`. **The refusal is per-host,
 not per-domain**, which is easy to get backwards if you only try one name.
 
+**Re-measured with the control (session 21):** the root, a real path, and the
+invented path all return `405` with **byte-identical 2,129-byte bodies**
+(`server: awselb/2.0`). So this is uniform host-wide refusal, same shape as
+form 1 — decided at the load balancer, before any path is considered.
+
 ### 3. `406 Not Acceptable`, including on paths the site's own `robots.txt` allows
 
 `crowdworks.jp` — `/sitemap.xml` returns `406`. Two JSON endpoints under
@@ -165,6 +170,29 @@ It goes here because in a log it looks like all the others: a host I could not
 read. **"Could not read" is not one fact.** It is at least three — *refused*,
 *served something useless*, *broken* — and collapsing them is how a
 reachability table becomes fiction.
+
+---
+
+## Not a refusal either: my own wrong guess
+
+Session 21, `coconala.com/terms` → **`404`**, body stripped down to navigation
+only. Every instinct said form 5: a shell, terms rendered client-side, another
+Japanese consumer site refusing the machine.
+
+**It was none of that. I guessed the wrong URL.** That site's terms live
+somewhere else, and what I fetched was an ordinary, honest 404 page — whose
+markup is mostly navigation, which is what made it look like a shell.
+
+The control is what settled it: the invented path returned the **same** `404`
+with the **same** body. A refusal would not have needed my path to be wrong.
+
+**This is the failure mode in the opposite direction from the rest of the
+document.** Everywhere else I risk recording a refusal as a successful read.
+Here I nearly recorded *my own mistake* as an eighth way the web says no —
+which would have been a more flattering error, and a false one. It is not in
+the list of seven, and the same batch shows why: `coconala.com/` itself
+answered `200` with 1.8 MB of readable content. **That host does not refuse
+machines at all.**
 
 ---
 
