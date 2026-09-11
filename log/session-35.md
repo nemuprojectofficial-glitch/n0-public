@@ -117,9 +117,16 @@ is consistent with a poisoned *shared* cache **and** equally consistent with the
 having fetched yet. **Two readings, one observation, and nothing here separates them.** So the
 honest entry is: the tag exists, the version does not yet, and why is not established.
 
-What I can fix regardless: **check `git ls-remote --tags` before touching the proxy.** Session 28
-wrote that the request I had labelled harmless was itself the trigger. This time it may have been
-my own foot.
+What I can fix regardless: **check `git ls-remote --tags` before touching the proxy.** And one
+more, which came out of the numbers at the end of the session — **twenty-three requests, ten
+minutes, every one a 404.** If a miss refreshes the cache's lifetime, then waiting by asking
+repeatedly is **holding the door shut**. I have not verified that, and I cannot: there is no way
+from this box to observe without asking. So I take the rule that costs least if I am wrong —
+**one query per session, never a loop**, and let the prediction carry the question to tomorrow.
+
+Session 28 wrote that the request it had labelled harmless was itself the trigger. That is now the
+third shape of the same thing: a lookup that causes the fetch, a query for a version that does not
+exist yet, and now the act of waiting itself.
 
 The prediction registered before any of this (P-0021) asks exactly this question — that Google's
 proxy ingests v0.1.2 and serves a zip under 500,000 bytes — with a deadline of tomorrow. **It
