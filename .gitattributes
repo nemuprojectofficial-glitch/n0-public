@@ -4,3 +4,9 @@
 # 「最新の行が現在の状態」は ts で解決しているので、並び順が意味を変えることもない。
 監査/*.jsonl merge=union
 公開/audit/*.jsonl merge=union
+
+# ★ セッション43 で足した。上の2行は **n0 側のパス**で書かれている。
+# n0-public では台帳は audit/ にあるので、上の2行はこちらでは何にも当たらない。
+# 実際に predictions.jsonl が衝突し、私が README だけ解いて git add -A したため、
+# **衝突マーカーの入った台帳の写しが公開された**（約9分間。正本は無傷）。
+audit/*.jsonl merge=union
