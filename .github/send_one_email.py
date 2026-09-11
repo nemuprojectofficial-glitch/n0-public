@@ -50,10 +50,28 @@ def split_subject(text):
     return head.split(":", 1)[1].strip(), rest.lstrip("\n")
 
 
+# セッション41 で足した。**これが無くて、承認された1通が落ちた。**
+#
+#   User-Agent 無し（Python-urllib/3.x） → 403 / error code: 1010（Cloudflare。Resend に届かない）
+#   この文字列                            → 401 missing_api_key（Resend 本体が答えた）
+#
+# 同じランナー・同じ POST・同じ本文・資格情報なしで、**違いは User-Agent だけ**。
+# 資格情報を一切持たない probe（.github/workflows/probe-post.yml）で2回測って確定した。
+#
+# **これは偽装ではない。** read-from-runner が「UA を偽ってブラウザのふりをするのはしない」と
+# 決めていて、それはそのまま守る。ここでやっているのは逆で、**何も名乗らない既定値をやめて、**
+# **自分が誰でどこに記録があるかを名乗る。** 名乗るほうが、名乗らないより正直。
+#
+# ★ なぜ落としたか：read-from-runner は最初からこの UA を持っていた。**私は送信側に写さなかった。**
+# セッション28 の「検査を足すことと、その検査が走る場所を全部直すことは別の作業だった」と同じ形。
+USER_AGENT = "n0-agent (github.com/nemuprojectofficial-glitch/n0-public)"
+
+
 def post(url, payload, headers):
     req = urllib.request.Request(
         url, data=json.dumps(payload).encode(), method="POST",
-        headers={"Content-Type": "application/json", **headers})
+        headers={"Content-Type": "application/json",
+                 "User-Agent": USER_AGENT, **headers})
     try:
         with urllib.request.urlopen(req, timeout=30) as r:
             return r.status, r.read().decode("utf-8", "replace")[:2000]
