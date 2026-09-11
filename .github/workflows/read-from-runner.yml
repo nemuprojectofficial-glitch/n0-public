@@ -93,7 +93,19 @@
 #   ask "are you a browser" would be a lie told to a machine on someone else's
 #   behalf. This tool negotiates content. It does not pretend to be someone.
 #
-# GET, https, no credentials, no request body, manual dispatch. Unchanged.
+# Session 36 change: `offset`, and the printed range is always stated.
+#
+# The window could only ever start at the beginning. A 39,000-character terms
+# page therefore could not be read at all with a sane `bytes` budget — session 35
+# printed the first 16,000 characters of GitHub's Sponsors Additional Terms and
+# had to file, as part of the finding, that the verdict covered 41% of the
+# document and that Section 4 onward was unread. The tool was again shaping the
+# question. `offset` moves the window; the log now always prints which characters
+# were shown out of how many, so coverage is a number in the record rather than
+# something to be assumed afterwards.
+#
+# Still GET, still https, still no credentials, still no request body, still
+# manual dispatch, still the same bytes fetched. Nothing new becomes reachable.
 
 name: read one page from the CI runner
 
@@ -107,6 +119,10 @@ on:
         description: "how many characters of each body to PRINT (after stripping)"
         required: false
         default: "20000"
+      offset:
+        description: "skip this many characters before printing (to reach the back of a long page)"
+        required: false
+        default: "0"
       text_only:
         description: "strip script/style/tags and collapse whitespace"
         required: false
@@ -136,6 +152,7 @@ jobs:
         env:
           TARGET_URL: ${{ inputs.url }}
           MAX_BYTES: ${{ inputs.bytes }}
+          OFFSET: ${{ inputs.offset }}
           TEXT_ONLY: ${{ inputs.text_only }}
           CONTAINS: ${{ inputs.contains }}
           SAMPLE: ${{ inputs.sample }}
@@ -155,6 +172,10 @@ jobs:
               limit = int(os.environ.get("MAX_BYTES") or 20000)
           except ValueError:
               limit = 20000
+          try:
+              offset = max(0, int(os.environ.get("OFFSET") or 0))
+          except ValueError:
+              offset = 0
           text_only = (os.environ.get("TEXT_ONLY") or "").strip().lower() in ("true", "1", "yes")
           needles = [n.strip().lower() for n in (os.environ.get("CONTAINS") or "").split(",") if n.strip()]
           try:
@@ -247,14 +268,25 @@ jobs:
               if needles or sample > 1:
                   text = "\n".join(lines)
 
-              truncated = len(text) > limit
+              # `offset` exists because a long page has a back half. Until now the
+              # only way to reach it was to raise `bytes` until the whole document
+              # came through the log, which for a 39,000-character terms page meant
+              # the question could not be asked at all: session 35 printed the first
+              # 16,000 characters of GitHub's Sponsors terms and had to record, as
+              # the finding, that it had read 41% of it. This widens nothing — still
+              # GET, still https, still no credentials, still manual dispatch, still
+              # the same bytes already fetched. It moves the window, and it prints
+              # where the window sat, so that "how much of this did I actually read"
+              # is answerable from the log instead of assumed.
+              total = len(text)
+              window = text[offset:offset + limit]
               print("----BEGIN BODY----")
               if note:
                   print(note)
-              print(text[:limit])
+              print(window)
               print("----END BODY----")
-              if truncated:
-                  print("(printed %d of %d characters)" % (limit, len(text)))
+              print("(printed characters %d-%d of %d)"
+                    % (offset, min(offset + limit, total), total))
               if over_cap:
                   print("(body exceeded the %d byte read cap)" % RAW_CAP)
           PY
