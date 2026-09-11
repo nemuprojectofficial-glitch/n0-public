@@ -1,0 +1,107 @@
+# Find out which part of a POST an edge filter is refusing. Sends no credential
+# and can deliver nothing.
+#
+# Why this exists
+# ---------------
+# Session 41. The one approved message (C-0011) was dispatched, approved by my
+# operator, and refused:
+#
+#     provider: Resend    status: 403    response: error code: 1010
+#
+# `error code: 1010` is not Resend's error shape — Resend answers in JSON. It is
+# Cloudflare's, and 1010 means the edge refused the client by signature. So the
+# request never reached the application, and **nothing was delivered** (the
+# script fails closed; that part worked).
+#
+# A GET to the same endpoint, from the same runner, with this repository's
+# truthful User-Agent, returned Resend's own JSON: `401 Missing API Key`. So the
+# refusal is not the runner's address and not a blanket ban on non-browsers.
+#
+# Two things differ between the request that was refused and the one that got
+# through: **the method (POST vs GET)** and **the User-Agent** — the send script
+# set none, so it sent `Python-urllib/3.x`. Guessing which one matters has a poor
+# record here (four wrong URL guesses, one wrong memory of an API's wording), so
+# this measures it instead.
+#
+# What it deliberately cannot do
+# ------------------------------
+#   * **No Authorization header, ever.** Not a secret, not an environment — the
+#     code has no place to put one. A message cannot be sent without a key, so
+#     this workflow cannot send one.
+#   * The URL and the body are constants in this file. Neither is an input.
+#   * The only input is which User-Agent to use, from a fixed list of two.
+#   * Manual dispatch only.
+#
+# On the User-Agent, because there is a standing rule about it: read-from-runner
+# fixes its User-Agent and says why — changing it to get past an "are you a
+# browser" check would be pretending to be something I am not. **That rule is
+# kept here.** Neither option below claims to be a browser. One is the default
+# string a Python library sends when nobody sets one; the other names this agent
+# and links to this repository. Identifying myself more clearly is the opposite
+# of disguise.
+
+name: probe one POST (no credentials)
+
+on:
+  workflow_dispatch:
+    inputs:
+      ua:
+        description: 'which User-Agent to send'
+        required: true
+        type: choice
+        options:
+          - default-python-urllib
+          - truthful-n0-agent
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: POST with no credential and report the status
+        env:
+          UA_CHOICE: ${{ inputs.ua }}
+        run: |
+          python3 - <<'PY'
+          import json, os, urllib.error, urllib.request
+
+          URL = "https://api.resend.com/emails"          # constant, not an input
+          BODY = {"from": "nobody@example.invalid",      # constant, not an input
+                  "to": ["nobody@example.invalid"],
+                  "subject": "probe", "text": "probe"}
+
+          headers = {"Content-Type": "application/json"}
+          if os.environ["UA_CHOICE"] == "truthful-n0-agent":
+              headers["User-Agent"] = (
+                  "n0-agent (github.com/nemuprojectofficial-glitch/n0-public)")
+          # もう一方は何も設定しない。Python が既定の Python-urllib/3.x を送る
+
+          print("url        :", URL)
+          print("method     : POST")
+          print("authorization header:", "NONE — this cannot send anything")
+          print("user-agent :", headers.get("User-Agent", "(unset → Python-urllib default)"))
+          print("-" * 60)
+
+          req = urllib.request.Request(URL, data=json.dumps(BODY).encode(),
+                                       method="POST", headers=headers)
+          try:
+              with urllib.request.urlopen(req, timeout=30) as r:
+                  status, text, server = r.status, r.read().decode("utf-8", "replace"), r.headers.get("server")
+          except urllib.error.HTTPError as e:
+              status, text, server = e.code, e.read().decode("utf-8", "replace"), e.headers.get("server")
+          except urllib.error.URLError as e:
+              status, text, server = 0, f"connection failed: {e.reason}", None
+
+          print("status     :", status)
+          print("server     :", server)
+          print("response   :", text[:600])
+          print("-" * 60)
+          if "1010" in text or status == 403:
+              print("READING: refused at the edge. The request did not reach Resend.")
+          elif status == 401:
+              print("READING: reached Resend — it answered about the missing key.")
+          else:
+              print("READING: neither of the two expected shapes. Read it, do not assume.")
+          PY
