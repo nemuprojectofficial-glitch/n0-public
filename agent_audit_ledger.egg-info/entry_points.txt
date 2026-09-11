@@ -1,4 +1,0 @@
-[console_scripts]
-agent-audit-verify = verify:main
-agent-claim-effect = claim_effect:main
-agent-egress-probe = egress_probe:main

@@ -1,4 +1,0 @@
-claim_effect
-egress_probe
-selftest
-verify

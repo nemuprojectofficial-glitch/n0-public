@@ -28,6 +28,11 @@ TO = os.environ["TO"]
 BODY_FILE = os.environ["BODY_FILE"]
 FROM = os.environ.get("MAIL_FROM", "").strip()
 REPLY_TO = os.environ.get("MAIL_REPLY_TO", "").strip()
+# 表示名は **秘密ではない。だから公開されたコード側に置く。**
+# 受信者が最初に見る1行がこれで、本文を読む前に「相手が何か」を伝える。
+# 内容にあたるものを secret に隠すと、何を名乗って送ったのかが後から誰にも確かめられない。
+# 括弧や引用符を避けてあるのは、表示名の quoting で1回きりの送信を落とさないため。
+FROM_NAME = os.environ.get("MAIL_FROM_NAME", "").strip()
 SENDGRID = os.environ.get("SENDGRID_API_KEY", "").strip()
 RESEND = os.environ.get("RESEND_API_KEY", "").strip()
 
@@ -54,6 +59,11 @@ def post(url, payload, headers):
             return r.status, r.read().decode("utf-8", "replace")[:2000]
     except urllib.error.HTTPError as e:
         return e.code, e.read().decode("utf-8", "replace")[:2000]
+    except urllib.error.URLError as e:
+        # 接続そのものが立たなかった場合（DNS・遮断・切断）。
+        # traceback を出すと「送れたのか送れなかったのか」が読む側に伝わらない。
+        # **届いていないことだけは確かなので、0 を返して落とす。**
+        return 0, f"connection failed: {e.reason}"
 
 
 def main():
@@ -87,9 +97,17 @@ def main():
             "and a bounced reply looks exactly like no reply, which is the one thing this message\n"
             "exists to measure. Set MAIL_REPLY_TO to an address that is actually read.")
 
+    # MAIL_FROM は素のアドレスで置いてもらう（例：agent@…）。表示名はここで付ける。
+    # 既に "Name <addr>" の形で入っていれば、そのまま使う（二重に包まない）。
+    sender = FROM if "<" in FROM else (f"{FROM_NAME} <{FROM}>" if FROM_NAME else FROM)
+
     subject, body = split_subject(open(BODY_FILE, encoding="utf-8").read())
     print(f"provider: {'SendGrid' if SENDGRID else 'Resend'}")
-    print(f"from    : {FROM}")
+    # MAIL_FROM は secret なので、この行は公開ログ上では *** に伏せられる。
+    # 送信ドメインはあやの既存プロジェクトのドメインの下にあり、**公開ログへ出すことは**
+    # **C-0016 が許した「受信者1人に見せること」より広い。** 伏せられるのは都合がよい。
+    print(f"from    : {sender}")
+    print(f"from-name(公開): {FROM_NAME or '(なし)'}")
     print(f"reply-to: {REPLY_TO}")
     print(f"to      : {TO}")
     print(f"subject : {subject}")
@@ -99,7 +117,7 @@ def main():
         status, text = post(
             "https://api.sendgrid.com/v3/mail/send",
             {"personalizations": [{"to": [{"email": TO}]}],
-             "from": {"email": FROM},
+             "from": {"email": sender},
              "reply_to": {"email": REPLY_TO},
              "subject": subject,
              "content": [{"type": "text/plain", "value": body}]},
@@ -110,7 +128,7 @@ def main():
             "https://api.resend.com/emails",
             # reply_to はペイロードのフィールド名。Resend の API リファレンスの原文で確認した
             # （"the payload for from, subject, and reply_to take precedence…"・2026-09-11 実測）。
-            {"from": FROM, "to": [TO], "reply_to": REPLY_TO,
+            {"from": sender, "to": [TO], "reply_to": REPLY_TO,
              "subject": subject, "text": body},
             {"Authorization": f"Bearer {RESEND}"})
         ok = status in (200, 201)
