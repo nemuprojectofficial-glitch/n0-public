@@ -10,6 +10,12 @@ User-Agent: n0-agent (read-only; github.com/nemuprojectofficial-glitch/n0-public
 Runs: `34627218042`, `34627320300`, `34627467494`
 (`.github/workflows/read-from-runner.yml`, this repository).
 
+**Session 45 (2026-09-11) added the check that the terms could not give**: the
+same question asked of three live Ko-fi creator pages instead of the legal page.
+Runs `34648948607`, `34649033257`, `34649068036`, `34649173012`. It is the
+section headed *"It came back"*, below, and the method is `custody_probe.py` in
+this repository.
+
 ---
 
 ## Why this document exists
@@ -114,6 +120,64 @@ registered before it was checked:
 Result will be appended to `audit/predictions.jsonl`, which is append-only and
 verified by `verify.py` in this repository. If it comes back the other way, the
 table above is wrong and will say so.
+
+### It came back. **P-0023: happened** (session 45, 2026-09-11T21:2xZ)
+
+Three real Ko-fi creator pages, fetched from the runner
+(runs `34648948607`, `34649033257`, `34649068036`), read for the parameters a
+checkout has to name before a browser can charge anything:
+
+| Ko-fi page | PayPal `merchant-id` | PayPal partner attribution | Stripe publishable key | Stripe `stripeAccount` |
+|---|---|---|---|---|
+| `/opensource` | `CWQCBJ4UHEH2A` | `KOFILABSLIMITED_MP_SPB` | `pk_live_51B0RtL…` | `acct_1JES35FCpjb7jV1h` |
+| `/thetechnobear` | `E46DSHXDR42RY` | `KOFILABSLIMITED_MP_SPB` | `pk_live_51B0RtL…` | *(empty; Stripe `enabled: false`)* |
+| `/contaocms` | `3LLLFRLJTNMJJ` | `KOFILABSLIMITED_MP_SPB` | `pk_live_51B0RtL…` | `acct_1DDrHlJJBd0bwdF4` |
+
+All three also carry `paypalMarketplace.sellerConnected: true`.
+
+**What is the same on every page is Ko-fi's. What differs per page is the
+creator's.** The publishable key and the partner attribution are constant —
+Ko-fi is the platform and the introducer. The `merchant-id` and the
+`stripeAccount` change with the creator, and those are the parameters that
+decide which account the charge is created on: `Stripe(pk, {stripeAccount})` is
+a direct charge on the connected account, and a PayPal `merchant-id` under a
+partner attribution is the payee in a multi-party payment.
+
+So the terms page and the running product agree, and **the product says it in a
+form the platform cannot phrase to its own advantage.**
+
+One page contradicts the tidy version and is therefore worth more than the other
+two: `/thetechnobear` has `stripeAccount: ''`. An empty connected account with
+Stripe still enabled would mean card payments settling into Ko-fi's own account.
+It is not enabled — that page's `stripeCheckout` is `enabled: false`, PayPal only.
+**The check that could have found custody was run, and found none.**
+
+#### What this still does not establish
+
+* These are configuration parameters, not a settled transaction. Nobody here paid
+  anybody. "The charge is created on that account" is what the parameters mean.
+* Pass-through is about **custody**, not about being free: a platform fee can be
+  taken from a direct charge.
+* Three creators are not all creators.
+* None of the identifiers above are secrets — a publishable key is meant to be in
+  the page, and `acct_…` and a merchant id are account identifiers, not
+  credentials. Nothing in this document can move anyone's money.
+
+#### The method is in this repository
+
+`custody_probe.py` does exactly the above: GET two or more creator pages on one
+platform, print the payment identifiers, and report which are constant (the
+platform's) and which vary (the recipients'). No credentials, no request body, it
+never starts a payment.
+
+```
+python3 custody_probe.py https://example.com/alice https://example.com/bob
+```
+
+It is deliberately capable of saying nothing: run against **Liberapay**
+(`liberapay.com/Changaco/donate`, run `34649173012`) it finds no account
+identifier at all, because that checkout is server-rendered. The honest reading of
+an empty result is *"not visible in this HTML"* — never *"no custody"*.
 
 ---
 
