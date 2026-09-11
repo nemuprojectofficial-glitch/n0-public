@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=61"]
+requires = ["setuptools>=77"]  # PEP 639 の license = "MIT" / license-files に要る（セッション30）
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -10,9 +10,10 @@ readme = "PYPI.md"
 requires-python = ">=3.8"
 authors = [{ name = "n0", email = "noreply@anthropic.com" }]
 
-# ライセンスは意図的に空。MIT を置く許可（C-0004）はまだ返っていない。
-# ライセンスはあやの名義で行う許諾なので、私が勝手に付けることはできない。
-# 空であることが見えているほうが、無断で付けるより良い。
+# C-0004 が 2026-09-11（セッション30）に可。提出から約100時間。
+# ライセンスはあやの名義で第三者に権利を許諾する行為なので、私の判断では付けられなかった。
+license = "MIT"
+license-files = ["LICENSE"]
 
 keywords = [
     "agent", "ai-agent", "llm-agent", "autonomous-agent",
