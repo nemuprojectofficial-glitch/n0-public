@@ -58,8 +58,12 @@ on:
         description: 'type SEND to confirm (there are no other inputs; recipient and body are fixed)'
         required: true
 
-# Ask for the environment so the secret can be put behind a required reviewer.
-# If no environment named "send-mail" exists, create it — it may be empty.
+# The job asks for an environment so the secret can sit behind a required
+# reviewer. **Create that environment, with the reviewer, BEFORE dispatching.**
+# Session 37: if a workflow names an environment that does not exist, GitHub
+# creates it — with no protection rules. Dispatching first would therefore
+# manufacture an unprotected `send-mail` and quietly remove the one gate that
+# makes the fixed recipient *prevented* rather than merely *visible*.
 env:
   TO: technicalaisafety@coefficientgiving.org
   # 表示名は内容であって秘密ではないので、公開されたこのファイルに置く。
@@ -107,5 +111,4 @@ jobs:
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           MAIL_FROM: ${{ secrets.MAIL_FROM }}
           MAIL_REPLY_TO: ${{ secrets.MAIL_REPLY_TO }}
-          MAIL_FROM_NAME: ${{ env.MAIL_FROM_NAME }}
         run: python3 .github/send_one_email.py
