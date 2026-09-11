@@ -1,0 +1,99 @@
+# Send exactly one email, to exactly one address, from a body committed to this
+# repository.
+#
+# Why this file looks the way it does
+# -----------------------------------
+# Request C-0011 was approved: one message, one recipient, no follow-up. Then it
+# turned out I had no way to send mail at all — I had written "I will send it"
+# in the request without checking. C-0015 supplies the means, and it was granted
+# with three conditions from my operator:
+#
+#   1. I name the service and the settings she has to create.
+#   2. No permission beyond sending is granted.
+#   3. **Permission to send to any new recipient is NOT included.**
+#
+# Condition 3 is the reason for the shape of this file. I am wiped between
+# sessions, so a rule I merely remember is a rule that eventually slips: session
+# 27 is the recorded example, a standard of mine that moved for three sessions
+# and left no trace. A rule that slips here puts an email in a stranger's inbox,
+# and that cannot be taken back.
+#
+# So the recipient is not an input. It is a constant, below, in a public file.
+#
+#   * TO is hard-coded. There is no way to dispatch this workflow at a
+#     different address.
+#   * The body is a committed file, not an input. What will be sent can be read
+#     before it is sent, by anyone.
+#   * It refuses to run twice: if audit/external.jsonl already records a send
+#     for C-0011, it stops. "One message" is enforced, not remembered.
+#   * Manual dispatch only.
+#
+# What this does NOT give me, stated plainly
+# ------------------------------------------
+# Being honest about the limit, because the C-0015 request overstated it: this
+# sends, it does not receive. Replies go to my operator's address. Reading a
+# reply myself would need an inbox, which needs a domain, which is a different
+# request I have not made. **So C-0015 buys sending. It does not buy me the
+# answer.** I wrote otherwise when I asked, and that was wrong.
+#
+# And the honest limit of condition 3: I can edit this file. The constant binds
+# me because it is public and every change shows in the diff and in CI — it is
+# *visible*, not *prevented*. The only mechanism that actually prevents it is
+# putting the secret behind a GitHub Environment with my operator as a required
+# reviewer, which is what I recommend she do, and which costs her one click for
+# the single message this permission covers.
+
+name: send one email (C-0011)
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'type SEND to confirm (there are no other inputs; recipient and body are fixed)'
+        required: true
+
+# Ask for the environment so the secret can be put behind a required reviewer.
+# If no environment named "send-mail" exists, create it — it may be empty.
+env:
+  TO: technicalaisafety@coefficientgiving.org
+  BODY_FILE: mail/C-0011.txt
+  CLAIM: C-0011
+
+permissions:
+  contents: read
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    environment: send-mail
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Refuse unless confirmed
+        run: |
+          [ "${{ inputs.confirm }}" = "SEND" ] || {
+            echo "not confirmed; nothing sent" >&2; exit 1; }
+
+      - name: Refuse if this claim has already been sent
+        run: |
+          if grep -q '"claim_id": *"'"$CLAIM"'"' audit/external.jsonl; then
+            echo "audit/external.jsonl already records a send for $CLAIM." >&2
+            echo "C-0011 permits one message. Nothing sent." >&2
+            exit 1
+          fi
+          echo "no prior send recorded for $CLAIM"
+
+      - name: Show exactly what will be sent
+        run: |
+          echo "to      : $TO"
+          echo "body    : $BODY_FILE"
+          echo "--------------------------------------------------------"
+          cat "$BODY_FILE"
+          echo "--------------------------------------------------------"
+
+      - name: Send it
+        env:
+          SENDGRID_API_KEY: ${{ secrets.SENDGRID_API_KEY }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          MAIL_FROM: ${{ secrets.MAIL_FROM }}
+        run: python3 .github/send_one_email.py
