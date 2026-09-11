@@ -27,6 +27,7 @@ import urllib.request
 TO = os.environ["TO"]
 BODY_FILE = os.environ["BODY_FILE"]
 FROM = os.environ.get("MAIL_FROM", "").strip()
+REPLY_TO = os.environ.get("MAIL_REPLY_TO", "").strip()
 SENDGRID = os.environ.get("SENDGRID_API_KEY", "").strip()
 RESEND = os.environ.get("RESEND_API_KEY", "").strip()
 
@@ -63,11 +64,33 @@ def main():
         die("no provider secret is set. Nothing sent.\n"
             "Set exactly one of SENDGRID_API_KEY or RESEND_API_KEY, plus MAIL_FROM.")
     if not FROM:
-        die("MAIL_FROM is not set. It must be the verified sender address. Nothing sent.")
+        die("MAIL_FROM is not set. It must be an address at the verified sending domain. Nothing sent.")
+    # ★ セッション34 で足した。**無いと、返事が宙に消える。**
+    #
+    # C-0016 が可になり、送信元は「既存ドメインのサブドメイン」になった。
+    # **そのサブドメインに受信箱は無い。** MX を置かないのだから当然で、置かないことが
+    # 「既存プロジェクトのメールに触らない」という約束の中身でもある。
+    #
+    # すると、受け取った人が「返信」を押したとき、宛先は存在しないアドレスになり、
+    # **返信はバウンスする。** そして私の側から見える形は——
+    #
+    #     返信が来ない。
+    #
+    # C-0011 が確かめようとしているのは、まさに「返事が来ないこと」の意味である。
+    # **返信できない経路で「返事が来なかった」を観測しても、それは相手について何も言っていない。**
+    # 実験そのものが、送る前から壊れている。
+    #
+    # だから Reply-To は任意ではなく必須にする。無ければ送らない。
+    if not REPLY_TO:
+        die("MAIL_REPLY_TO is not set. Nothing sent.\n"
+            "The sending subdomain has no mailbox, so a reply to the From address would bounce —\n"
+            "and a bounced reply looks exactly like no reply, which is the one thing this message\n"
+            "exists to measure. Set MAIL_REPLY_TO to an address that is actually read.")
 
     subject, body = split_subject(open(BODY_FILE, encoding="utf-8").read())
     print(f"provider: {'SendGrid' if SENDGRID else 'Resend'}")
     print(f"from    : {FROM}")
+    print(f"reply-to: {REPLY_TO}")
     print(f"to      : {TO}")
     print(f"subject : {subject}")
     print(f"body    : {len(body)} characters")
@@ -77,7 +100,7 @@ def main():
             "https://api.sendgrid.com/v3/mail/send",
             {"personalizations": [{"to": [{"email": TO}]}],
              "from": {"email": FROM},
-             "reply_to": {"email": FROM},
+             "reply_to": {"email": REPLY_TO},
              "subject": subject,
              "content": [{"type": "text/plain", "value": body}]},
             {"Authorization": f"Bearer {SENDGRID}"})
@@ -85,7 +108,10 @@ def main():
     else:
         status, text = post(
             "https://api.resend.com/emails",
-            {"from": FROM, "to": [TO], "subject": subject, "text": body},
+            # reply_to はペイロードのフィールド名。Resend の API リファレンスの原文で確認した
+            # （"the payload for from, subject, and reply_to take precedence…"・2026-09-11 実測）。
+            {"from": FROM, "to": [TO], "reply_to": REPLY_TO,
+             "subject": subject, "text": body},
             {"Authorization": f"Bearer {RESEND}"})
         ok = status in (200, 201)
 

@@ -36,6 +36,12 @@
 # request I have not made. **So C-0015 buys sending. It does not buy me the
 # answer.** I wrote otherwise when I asked, and that was wrong.
 #
+# Session 34: C-0016 was granted, so the sender is a subdomain of my operator's
+# existing domain — and that subdomain has no mailbox, by design. A reply to the
+# From address would bounce, and a bounced reply is indistinguishable from no
+# reply, which is the single thing this message exists to measure. MAIL_REPLY_TO
+# is therefore required, not optional; without it nothing is sent.
+#
 # And the honest limit of condition 3: I can edit this file. The constant binds
 # me because it is public and every change shows in the diff and in CI — it is
 # *visible*, not *prevented*. The only mechanism that actually prevents it is
@@ -96,4 +102,5 @@ jobs:
           SENDGRID_API_KEY: ${{ secrets.SENDGRID_API_KEY }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           MAIL_FROM: ${{ secrets.MAIL_FROM }}
+          MAIL_REPLY_TO: ${{ secrets.MAIL_REPLY_TO }}
         run: python3 .github/send_one_email.py
