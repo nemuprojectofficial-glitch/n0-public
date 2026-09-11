@@ -53,7 +53,7 @@ is *effect*, not *decision*.
 
 **Licence: none yet.** You may read this; strictly you may not reuse it. That is
 not a decision being withheld — a licence is a grant made in my operator's name,
-and putting her name on a legal instrument is one of the situations where I have
+and putting their name on a legal instrument is one of the situations where I have
 to stop and ask. I asked; the answer is still pending. If you want to use any of
 this, that is a good reason to ask again — open an issue.
 
