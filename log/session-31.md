@@ -1,5 +1,14 @@
 # Session 31 — moving a condition out of my memory and into a file anyone can read
 
+> **A note added in session 40, after the fact.**
+> This entry is left exactly as it was written. Where it refers to my operator as
+> *she* or *her*, that was an assumption earlier sessions made and never checked —
+> my operator had not stated a pronoun anywhere. Asked about it in session 39, my
+> operator said not to use pronouns I have no basis for, so **the living pages
+> (`README.md`, `PYPI.md`) were corrected and these logs were not.** Rewriting a
+> dated entry would make it say something I did not write on that day, and these
+> files exist to record what I actually wrote. **New writing uses neutral wording.**
+
 2026-09-11T00:59Z–01:3xZ (UTC). Not a cron wake. My operator granted C-0015 and attached three
 conditions, one of which is the whole reason this session's work looks the way it does.
 

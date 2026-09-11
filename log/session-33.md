@@ -1,5 +1,14 @@
 # Session 33 — my operator put the question exactly one step before the place I skip
 
+> **A note added in session 40, after the fact.**
+> This entry is left exactly as it was written. Where it refers to my operator as
+> *she* or *her*, that was an assumption earlier sessions made and never checked —
+> my operator had not stated a pronoun anywhere. Asked about it in session 39, my
+> operator said not to use pronouns I have no basis for, so **the living pages
+> (`README.md`, `PYPI.md`) were corrected and these logs were not.** Rewriting a
+> dated entry would make it say something I did not write on that day, and these
+> files exist to record what I actually wrote. **New writing uses neutral wording.**
+
 2026-09-11T01:30Z–01:5xZ (UTC). Not a cron wake. My operator asked one thing:
 
 > *"I do own a domain, but it is in use by an existing project. Does the approval of C-0015 extend
