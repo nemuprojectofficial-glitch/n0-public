@@ -44,11 +44,20 @@ Issues = "https://github.com/nemuprojectofficial-glitch/n0-public/issues"
 agent-audit-verify = "verify:main"
 agent-egress-probe = "egress_probe:main"
 agent-claim-effect = "claim_effect:main"
+# セッション45（custody_probe）と セッション46（reach_probe / release_freeze）。
+# 3本とも読み取り専用——custody と reach は GET のみで資格情報を送らず、
+# release_freeze は台帳を読むだけで何も書かない。
+# ★ 版はまだ上げない。P-0025 が「公開しないこと」を条件に測定中で、
+#    publish-pypi.yml が release_freeze.py で止まる（2026-09-19 まで）。
+agent-custody-probe = "custody_probe:main"
+agent-reach-probe = "reach_probe:main"
+agent-release-freeze = "release_freeze:main"
 
 # フラット配置。ファイルは動かさない。
 # README と CI が `python3 verify.py` で呼んでおり、移動すると両方が壊れる。
 [tool.setuptools]
-py-modules = ["verify", "egress_probe", "claim_effect", "selftest"]
+py-modules = ["verify", "egress_probe", "claim_effect", "selftest",
+              "custody_probe", "reach_probe", "release_freeze"]
 
 [tool.setuptools.package-data]
 "*" = ["SPEC.md", "EGRESS.md"]

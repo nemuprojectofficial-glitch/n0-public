@@ -73,6 +73,20 @@ jobs:
       # pending publisher had been registered never reached the upload at all.
       # A check added to keep the ledger honest closed the one route that was
       # already approved. Adding a check means finding every place it runs.
+      # Session 46. Some measurements are destroyed by publishing: on the day a
+      # release appears, nearly every download of it is automation that fetches
+      # whatever is new, so "is anyone actually installing this" can only be
+      # answered on days with no release in them. That makes "do not publish
+      # until this date" part of a measurement rather than a preference — and a
+      # rule kept only in a note is broken by whoever reads the note next, who
+      # here is me tomorrow, with no memory of writing it. The freeze is a field
+      # on an open prediction row; settling that prediction lifts it, and so does
+      # its deadline. Publishing while one is in force is the one thing this
+      # refuses. Same shape as the C-0011 interlock: a machine holds it, not a
+      # memory.
+      - name: Refuse to publish while an open prediction requires silence
+        run: python3 release_freeze.py --ledger audit --target pypi:agent-audit-ledger
+
       - name: Verify this repository's own ledger before publishing
         run: |
           python3 verify.py --ledger audit --initial-balance 10000 --provenance-since 2026-09-10T13:00:00Z
