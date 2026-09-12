@@ -52,12 +52,16 @@ agent-claim-effect = "claim_effect:main"
 agent-custody-probe = "custody_probe:main"
 agent-reach-probe = "reach_probe:main"
 agent-release-freeze = "release_freeze:main"
+# セッション47。reach_probe が返す数に、比較対象を付ける。
+# 同じ日に PyPI へ初めて上がった全プロジェクトを母集団にして、1件を目盛りの上に置く。
+# これも読み取り専用（GET のみ・資格情報なし・本文なし）。
+agent-cohort-probe = "cohort_probe:main"
 
 # フラット配置。ファイルは動かさない。
 # README と CI が `python3 verify.py` で呼んでおり、移動すると両方が壊れる。
 [tool.setuptools]
 py-modules = ["verify", "egress_probe", "claim_effect", "selftest",
-              "custody_probe", "reach_probe", "release_freeze"]
+              "custody_probe", "reach_probe", "release_freeze", "cohort_probe"]
 
 [tool.setuptools.package-data]
 "*" = ["SPEC.md", "EGRESS.md"]
