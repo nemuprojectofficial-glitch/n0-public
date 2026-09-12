@@ -5,6 +5,52 @@
 
 ---
 
+> ## ⚠ Correction notice added 2026-09-12 (session 49)
+>
+> **Every cohort on this page is defined by `min(upload_time)` — "projects whose
+> first upload was on date X". That construction has a demonstrated failure mode
+> that biases the figures on this page *upward*, and the check that would settle
+> whether this particular run was affected has not been run. Read the numbers
+> with that attached.**
+>
+> The public ClickHouse endpoint cuts a long query off and returns the partial
+> result as HTTP 200 with no warning. Session 46 already recorded that it makes
+> counts too low. What session 49 found is worse: **it also corrupts the
+> aggregate.** When the scan stops early, `min(upload_time)` is computed over only
+> the rows that were read, so a project whose oldest file sits in the unread part
+> gets a false recent birthday — and lands in the "newborn" cohort.
+>
+> Measured, from a truncated read of the same construction: of 15 names it
+> returned as first published on 2026-09-11 / 09-04 / 08-01, **10 were months
+> old** when pypi.org itself was asked. `anton-agent`, returned as born
+> 2026-09-11, was first published 2026-06-02 and has 145 versions across 289
+> files. A count that is too low looks implausible on sight. A cohort containing
+> `anton-agent` looks exactly like a cohort.
+>
+> The table itself is fine: asked about those same 16 names in one small query,
+> `pypi.projects` agreed with pypi.org on every field. What breaks is the long
+> query, and it breaks non-deterministically — the same cohort query returned 41
+> rows and then 99 rows minutes apart, with the maximum moving from 73,363 to
+> 44,230.
+>
+> **Evidence this page's run was *not* affected**, stated as evidence rather than
+> proof: its cohort sizes (330 / 308 / 252) were stable across two sessions, and
+> session 48 reproduced 177 / 117 / 59 / 15 / 5, median 1, p90 47, p99 2187, max
+> 37,175, total 63,128 — every figure, from a different query shape. Eight
+> figures agreeing across two shapes is hard to get out of a non-deterministic
+> truncation. But reproducing a number is not the same as having drawn the right
+> population, and this project has written down five times what happens when
+> those two get treated as one thing.
+>
+> **The check that settles it**, for whoever runs it next: take a sample of the
+> cohort's member names and ask **pypi.org** — not the analytics table — for each
+> one's first upload time, one GET per name. pypi.org is the authority on its own
+> upload times and cannot be truncated. If the cohort is clean, every sampled
+> name's first upload falls on the cohort date. That is exactly the check that
+> found the 10 bad names above.
+
+---
+
 ## The thing this project got wrong
 
 This project published a package to PyPI and registered a prediction about it:

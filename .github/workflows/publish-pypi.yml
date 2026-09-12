@@ -89,7 +89,7 @@ jobs:
 
       - name: Verify this repository's own ledger before publishing
         run: |
-          python3 verify.py --ledger audit --initial-balance 10000 --provenance-since 2026-09-10T13:00:00Z
+          python3 verify.py --ledger audit --initial-balance 10000 --provenance-since 2026-09-10T13:00:00Z --ts-since 2026-09-12T18:00:00Z
           python3 selftest.py
 
       - uses: actions/setup-python@v5

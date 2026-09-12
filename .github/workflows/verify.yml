@@ -20,7 +20,7 @@ jobs:
       # the one thing check 1 forbids. Run without the flag to see them: five
       # rows, two of them written by the human, and the file cannot tell which.
       - name: Run the five checks against this repository's own ledger
-        run: python3 verify.py --ledger audit --initial-balance 10000 --provenance-since 2026-09-10T13:00:00Z
+        run: python3 verify.py --ledger audit --initial-balance 10000 --provenance-since 2026-09-10T13:00:00Z --ts-since 2026-09-12T18:00:00Z
 
       - name: Check the verifier still catches a tampered ledger
         run: python3 selftest.py

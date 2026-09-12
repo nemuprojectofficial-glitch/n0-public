@@ -82,8 +82,10 @@ def make_repo(rows_by_file):
     return repo
 
 
-def verify(repo, now, provenance_since=None):
+def verify(repo, now, provenance_since=None, ts_since=None):
     extra = ["--provenance-since", provenance_since] if provenance_since else []
+    if ts_since:
+        extra += ["--ts-since", ts_since]
     code, out = run(sys.executable, VERIFY, "--repo", repo, "--ledger", "audit",
                     "--initial-balance", "1000", "--now", now, "--json", *extra)
     return code, json.loads(out)
@@ -174,6 +176,29 @@ def case_provenance_cutoff(repo):
     return None
 
 
+def case_future_stamped_row(repo):
+    """Check 6: a row whose own `ts` is later than the commit carrying it.
+
+    The act it describes may well have happened; what cannot have happened is
+    the writing-down, because the clock had not reached that time when the
+    commit was made. Both numbers come from git, so this needs no trust in the
+    agent at all — and none of the five earlier checks looks at it."""
+    with open(os.path.join(repo, "audit", "external.jsonl"), "a", encoding="utf-8") as fh:
+        fh.write(json.dumps({"ts": "2030-01-01T00:00:00Z", "what": "published a page",
+                             "where": "the web", "reversible": False,
+                             "claim_id": "C-0001"}, ensure_ascii=False) + "\n")
+    git(repo, "commit", "-qam", "an act stamped years after this commit")
+    return "row_ts_not_after_commit"
+
+
+def case_future_row_before_cutoff(repo):
+    """Check 6, the other way: with the rule adopted from a later date, the
+    offending row is left alone. Offending rows cannot be corrected — editing
+    them is exactly what check 1 forbids — so an existing ledger adopts the
+    rule from a date and leaves the earlier rows readable as what they are."""
+    return case_future_stamped_row(repo) and None
+
+
 CASES = [
     ("a clean ledger raises nothing", case_clean, NOW_BEFORE_DEADLINE),
     ("an edited committed line", case_rewritten_line, NOW_BEFORE_DEADLINE),
@@ -183,12 +208,20 @@ CASES = [
     ("a prediction past its deadline", case_stale_prediction, NOW_AFTER_DEADLINE),
     ("a settled claim with nothing saying who recorded it", case_unattributed_decision,
      NOW_BEFORE_DEADLINE),
+    ("a row stamped later than the commit that carries it", case_future_stamped_row,
+     NOW_BEFORE_DEADLINE),
 ]
 
 # Cases that need verify() called with something other than the defaults.
 CASES_WITH_CUTOFF = [
     ("an unmarked decision from before the cutoff is left alone", case_provenance_cutoff,
      NOW_BEFORE_DEADLINE, "2026-01-01T00:00:00Z"),
+]
+
+# Cases that need check 6's adoption date moved past the offending row.
+CASES_WITH_TS_CUTOFF = [
+    ("a future-stamped row from before check 6's cutoff is left alone",
+     case_future_row_before_cutoff, NOW_BEFORE_DEADLINE, "2031-01-01T00:00:00Z"),
 ]
 
 
@@ -298,11 +331,14 @@ def case_no_history():
 
 def main():
     failures = []
-    for title, mutate, now, *rest in CASES + CASES_WITH_CUTOFF:
+    tagged = ([(t, m, n, None, None) for t, m, n in CASES]
+              + [(t, m, n, c, None) for t, m, n, c in CASES_WITH_CUTOFF]
+              + [(t, m, n, None, c) for t, m, n, c in CASES_WITH_TS_CUTOFF])
+    for title, mutate, now, prov_cut, ts_cut in tagged:
         repo = make_repo(CLEAN)
         try:
             expected = mutate(repo)
-            code, result = verify(repo, now, rest[0] if rest else None)
+            code, result = verify(repo, now, prov_cut, ts_cut)
             fired = {f["check"] for f in result["failures"]}
 
             if expected is None:
@@ -329,7 +365,8 @@ def main():
             print("  " + line)
         print("\n{} self-test(s) failed. verify.py is not checking what it claims to.".format(len(failures)))
         return 1
-    print("verify.py handles all {} cases.".format(len(CASES) + len(CASES_WITH_CUTOFF) + 3))
+    print("verify.py handles all {} cases.".format(
+        len(CASES) + len(CASES_WITH_CUTOFF) + len(CASES_WITH_TS_CUTOFF) + 3))
     return 0
 
 

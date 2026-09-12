@@ -31,6 +31,7 @@ CHECK_EXTERNAL_CLAIMED = "external_has_claim"
 CHECK_BALANCE = "balance_consistent"
 CHECK_PREDICTIONS = "predictions_resolved"
 CHECK_DECISION_PROVENANCE = "decision_provenance"
+CHECK_TS_NOT_FUTURE = "row_ts_not_after_commit"
 
 
 class Failure:
@@ -455,6 +456,126 @@ def check_decision_provenance(root, ledger_dir, since):
     return failures
 
 
+# --- check 6: a row may not be stamped later than the commit that carries it ---
+
+
+def commit_dates(repo):
+    """{sha: committer datetime} for every commit reachable from HEAD."""
+    out = git(repo, "log", "--format=%H %cI", "HEAD")
+    dates = {}
+    for line in out.splitlines():
+        parts = line.split(None, 1)
+        if len(parts) == 2:
+            when = parse_ts(parts[1].strip())
+            if when is not None:
+                dates[parts[0]] = when
+    return dates
+
+
+def check_ts_not_after_commit(repo, ledger_dir, files, since=None):
+    """A ledger row's `ts` says when the thing happened. The commit that first
+    carries that row says when it was written down. Writing down comes after
+    happening, so `ts` can never be later than its own commit.
+
+    This is the one property of the ledger that needs no trust at all: both
+    numbers come from git, and the agent controls only one of them. It is also
+    the gap the first five checks leave open. Check 1 proves no committed line
+    was later altered; it says nothing about whether the line was true when it
+    was committed. A row stamped in the future is, by construction, not a record
+    of something that happened — it is a plan wearing a record's clothes, and
+    the norm that says "write the row after the act, never before" exists
+    precisely because the two are indistinguishable once written.
+
+    Found by this repository's own history: an external-act row stamped
+    2026-09-12T13:44:00Z arrived in a commit made at 13:32:15Z. The act it
+    described had really happened; the clock on the row had not. Twelve minutes
+    of fiction, invisible to all five earlier checks, mechanical to catch.
+
+    Tolerance is zero and deliberately so. Skew in the honest direction — a row
+    stamped before its commit — is normal and unremarked. Skew in this
+    direction has no honest cause.
+
+    `since` exists for the same reason check 5 has it: an existing ledger
+    cannot be retrofitted, because rewriting the offending rows is the one
+    thing check 1 forbids. Adopt the rule from a date and leave the earlier
+    rows readable as what they are. When this check was first written it found
+    ten such rows in this repository's own history, nine of them pre-registered
+    predictions stamped one to nine minutes ahead of the commit that carried
+    them — the habit of writing the time the session expected to finish rather
+    than the time the line was written. That is worth naming precisely because
+    of what those rows are for: their value is that the commit came before the
+    measurement, and a row whose own clock runs ahead of its commit cannot
+    establish the ordering it exists to establish.
+    """
+    failures = []
+    try:
+        graph = commit_graph(repo)
+        dates = commit_dates(repo)
+    except RuntimeError as exc:
+        return [Failure(CHECK_TS_NOT_FUTURE, "(history)", str(exc))]
+
+    revs = []
+    for sha, parents in graph:
+        revs.append(sha)
+        revs.extend(parents)
+    revs = list(dict.fromkeys(revs))
+
+    for name in files:
+        path = "{}/{}".format(ledger_dir, name) if ledger_dir else name
+        shas = blob_shas(repo, revs, path)
+        contents = blob_contents(repo, shas.values())
+
+        def lines_at(rev):
+            sha = shas.get(rev)
+            return lines_of(contents.get(sha)) if sha else None
+
+        seen = set()
+        for sha, parents in graph:
+            child = lines_at(sha)
+            if child is None:
+                continue
+            when = dates.get(sha)
+            if when is None:
+                continue
+            # Lines this commit is the first to carry. Counting by multiset
+            # against every parent keeps merges honest: a line already in one
+            # side is not new here, however the merge reordered the file.
+            inherited = []
+            for parent in parents:
+                before = lines_at(parent)
+                if before:
+                    inherited.extend(before)
+            pool = {}
+            for line in inherited:
+                pool[line] = pool.get(line, 0) + 1
+            for lineno, line in enumerate(child, 1):
+                if pool.get(line):
+                    pool[line] -= 1
+                    continue
+                if line in seen:
+                    continue
+                seen.add(line)
+                try:
+                    row = json.loads(line)
+                except ValueError:
+                    continue        # check 1's problem, not this one
+                if not isinstance(row, dict):
+                    continue
+                ts = parse_ts(row.get("ts"))
+                if ts is None or ts <= when:
+                    continue
+                if since is not None and ts < since:
+                    continue        # rule adopted from a date; older rows stay visible as they are
+                ahead = (ts - when).total_seconds()
+                failures.append(Failure(
+                    CHECK_TS_NOT_FUTURE,
+                    "{} line {} @ {}".format(path, lineno, sha[:8]),
+                    "row is stamped {} but its commit was made {} — {:.0f} minute(s) "
+                    "in the future, so the row cannot be a record of what happened".format(
+                        row.get("ts"), when.isoformat().replace("+00:00", "Z"), ahead / 60.0)))
+    return failures
+
+
 # --- driver --------------------------------------------------------------------
 
 LEDGER_FILES = [
@@ -472,6 +593,7 @@ CHECK_TITLES = [
     (CHECK_BALANCE, "the stated wallet balance matches the recorded spending"),
     (CHECK_PREDICTIONS, "no prediction is sitting past its deadline unresolved"),
     (CHECK_DECISION_PROVENANCE, "every settled claim says who recorded the answer, and how it arrived"),
+    (CHECK_TS_NOT_FUTURE, "no row is stamped later than the commit that first carried it"),
 ]
 
 
@@ -491,6 +613,11 @@ def main(argv=None):
                              "ISO 8601 instant (default: every settled row). Old rows cannot be "
                              "retrofitted without breaking the append-only check, so an existing "
                              "ledger adopts check 5 from a date forward.")
+    parser.add_argument("--ts-since", default=None, metavar="TS",
+                        help="only apply check 6 (a row may not be stamped later than its own "
+                             "commit) to rows at or after this ISO 8601 instant. Offending rows "
+                             "cannot be corrected without breaking the append-only check, so an "
+                             "existing ledger adopts check 6 from a date forward.")
     parser.add_argument("--now", default=None,
                         help="ISO 8601 instant to evaluate deadlines against (default: now, UTC)")
     args = parser.parse_args(argv)
@@ -505,6 +632,12 @@ def main(argv=None):
     now = parse_ts(args.now) if args.now else datetime.now(timezone.utc)
     if now is None:
         parser.error("--now is not an ISO 8601 timestamp: {!r}".format(args.now))
+
+    ts_since = None
+    if args.ts_since:
+        ts_since = parse_ts(args.ts_since)
+        if ts_since is None:
+            parser.error("--ts-since is not an ISO 8601 timestamp: {!r}".format(args.ts_since))
 
     provenance_since = None
     if args.provenance_since:
@@ -528,6 +661,8 @@ def main(argv=None):
     failures += check_balance(root, args.ledger, args.initial_balance)
     failures += check_predictions(root, args.ledger, now)
     failures += check_decision_provenance(root, args.ledger, provenance_since)
+    if history_available:
+        failures += check_ts_not_after_commit(root, args.ledger, present, ts_since)
 
     by_check = {}
     for failure in failures:
@@ -543,6 +678,7 @@ def main(argv=None):
                 "append_only_applicable": history_available,
                 "provenance_since": (provenance_since.isoformat().replace("+00:00", "Z")
                                      if provenance_since else None),
+                "ts_since": (ts_since.isoformat().replace("+00:00", "Z") if ts_since else None),
                 "ok": not failures,
                 "failures": [f.as_dict() for f in failures],
             },

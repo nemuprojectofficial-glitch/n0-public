@@ -52,7 +52,7 @@ Neither is this project's data and neither can be written to from here. The
 `user=demo` in the URL is that service's published read-only role, not anyone's
 credential.
 
-The three controls, and why each one can actually say no
+The four controls, and why each one can actually say no
 --------------------------------------------------------
 1. **Freshness.** Borrowed whole from reach_probe: a reference project whose
    daily total is in the tens of millions is asked for its newest day. The
@@ -285,6 +285,105 @@ def window_closed(w1, newest):
     return True, "the window ends {} and the data reaches {}".format(w1, newest)
 
 
+# Control 4's sample size. Small on purpose: it is one GET per name against
+# pypi.org, and its job is to catch a contaminated cohort, not to audit one.
+# Ten names caught 10-of-15 the day it was written.
+BIRTH_SAMPLE = 10
+
+
+def cohort_members(day, limit, fetch=ask):
+    """`limit` names from the cohort born on `day`, alphabetically.
+
+    Alphabetical and not random on purpose: the same names come back on a
+    re-run, so a reader can check this tool's homework by hand.
+    """
+    sql = """
+    SELECT name FROM {projects} GROUP BY name
+    HAVING toDate(min(upload_time)) = {day}
+    ORDER BY name LIMIT {limit}
+    """.format(projects=PROJECTS, day=sql_literal(day), limit=int(limit))
+    rows, err = fetch(sql)
+    if err:
+        return None, err
+    return [r.get("name") for r in rows if r.get("name")], None
+
+
+def pypi_first_upload(project, timeout=20):
+    """The project's earliest upload time, from pypi.org itself.
+
+    pypi.org is the authority on its own upload times and serves one project
+    per request, so there is no long scan for anything to cut short. That is the
+    entire reason this control is worth the round trips.
+    """
+    url = "https://pypi.org/pypi/{}/json".format(urllib.parse.quote(project, safe=""))
+    req = urllib.request.Request(url, method="GET", headers={
+        "User-Agent": UA, "Accept": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            body = r.read().decode("utf-8", "replace")
+    except Exception as e:                                      # noqa: BLE001
+        return None, "%s: %s" % (type(e).__name__, e)
+    try:
+        data = json.loads(body)
+        stamps = sorted(f["upload_time_iso_8601"]
+                        for files in data["releases"].values() for f in files)
+    except Exception as e:                                      # noqa: BLE001
+        return None, "unreadable JSON: %s" % e
+    if not stamps:
+        return None, "no files"
+    return stamps[0][:10], None
+
+
+def births_agree(day, names, lookup=pypi_first_upload):
+    """Do the cohort's members really date from `day`, according to PyPI?
+
+    Control 3 asks whether the cohort is the *size* a cohort should be. That is
+    a proxy, and this project has now written down six times what happens when a
+    proxy is guarded instead of the thing it stands for. The thing here is *who
+    is in the cohort*, and a short read changes that in a way size cannot see:
+    the cohort is built on `min(upload_time)`, and when the endpoint cuts a scan
+    off it computes that minimum over only the rows it read. A project whose
+    oldest file sits in the unread part therefore arrives wearing a false recent
+    birthday. Every such intruder is an established project, so every one of them
+    pushes the download figures *up*.
+
+    Measured the day this was written: of 15 names a truncated read returned as
+    newborns, 10 were months old — one of them `anton-agent`, returned as born
+    2026-09-11, first published 2026-06-02, 145 versions across 289 files. A
+    cohort three times too small looks wrong on sight. A cohort containing
+    `anton-agent` looks exactly like a cohort.
+
+    Control 3 would not have caught it, and could not: truncation shrinks the
+    neighbouring days too, so the ratio stays in range while all three are short.
+
+    A name pypi.org will not answer for is not counted as agreement.
+    """
+    if not names:
+        return False, "no cohort members came back, so their birthdays cannot be checked"
+    agree, wrong, unknown = [], [], []
+    for name in names:
+        first, err = lookup(name)
+        if err or not first:
+            unknown.append((name, err or "no date"))
+        elif first == day:
+            agree.append(name)
+        else:
+            wrong.append((name, first))
+    if wrong:
+        shown = ", ".join("%s (first published %s)" % (n, f) for n, f in wrong[:4])
+        return False, ("{} of {} sampled cohort members were not born on {} at all: {}"
+                       "{} — the cohort contains a different population than it says"
+                       .format(len(wrong), len(names), day, shown,
+                               ", ..." if len(wrong) > 4 else ""))
+    if not agree:
+        return False, ("pypi.org answered for none of the {} sampled names ({}), so "
+                       "the cohort's membership is unchecked"
+                       .format(len(names), unknown[0][1] if unknown else "no reason given"))
+    return True, ("pypi.org confirms all {} sampled members were first published on {}{}"
+                  .format(len(agree), day,
+                          " (%d name(s) unanswered)" % len(unknown) if unknown else ""))
+
+
 def cohort_plausible(day, sizes):
     """A cohort far smaller than both its neighbours is a short read of the
     metadata table, which silently changes who you are compared to."""
@@ -361,6 +460,31 @@ def selftest():
     check("a missing neighbour is refused, not assumed fine",
           cohort_plausible("2026-09-04",
                            {"2026-09-04": 330, "2026-09-05": 256})[0] is False)
+
+    # 5b. The membership control must refuse a cohort whose members are not
+    #     from that day, must pass one whose members are, and must not read
+    #     "could not check" as "checked and fine". This is the control that
+    #     size cannot stand in for: on the day it was written, a truncated read
+    #     returned 15 "newborns" of which 10 were months old, and the size
+    #     control could not have caught a single one of them.
+    real = {"aitesting": "2026-09-04", "entroptics-jlens": "2026-09-04",
+            "anton-agent": "2026-06-02", "agentnova": "2026-03-20"}
+
+    def from_pypi(name):
+        return (real.get(name), None) if name in real else (None, "HTTPError: 404")
+
+    ok, why = births_agree("2026-09-04",
+                           ["aitesting", "entroptics-jlens", "anton-agent"],
+                           lookup=from_pypi)
+    check("a cohort member months older than the cohort day is refused",
+          ok is False and "anton-agent (first published 2026-06-02)" in why)
+    check("a cohort whose sampled members really are from that day passes",
+          births_agree("2026-09-04", ["aitesting", "entroptics-jlens"],
+                       lookup=from_pypi)[0] is True)
+    check("a sample pypi.org answers for none of is refused, not assumed fine",
+          births_agree("2026-09-04", ["nope-a", "nope-b"], lookup=from_pypi)[0] is False)
+    check("an empty member list is refused, not assumed fine",
+          births_agree("2026-09-04", [], lookup=from_pypi)[0] is False)
 
     # 6. min() over no rows returns the epoch, which is a date and therefore
     #    looks like an answer.
@@ -469,6 +593,19 @@ def main(argv=None):
     print("control: %s" % why)
     if not ok:
         print("UNRELIABLE: refusing to compare against a cohort that looks short.")
+        return 1
+
+    # Control 4: are the cohort's members really from that day? Control 3 checks
+    # the cohort's size, which a truncated read can leave plausible while having
+    # quietly swapped who is in it.
+    names, err = cohort_members(day, BIRTH_SAMPLE)
+    if err:
+        print("UNRELIABLE: the cohort's member names did not come back: %s" % err)
+        return 1
+    ok, why = births_agree(day, names)
+    print("control: %s" % why)
+    if not ok:
+        print("UNRELIABLE: refusing to report a cohort whose members are not from that day.")
         return 1
     print()
 
