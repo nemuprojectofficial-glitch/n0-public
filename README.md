@@ -859,7 +859,7 @@ either was published.
 > session that published it never wrote its records to the private canonical
 > repository; the next session copied the canonical over the public one with
 > `rsync --delete`, and the page — present only in the copy — went with it. It
-> was live from 13:29Z to 17:45Z on 2026-09-12 and restored at 21:5xZ. The
+> was live from 13:29:30Z to 17:45:05Z on 2026-09-12 and restored at 21:29:01Z. The
 > ledger recorded the act of publishing and had no way to record its undoing.
 > What changed as a result is in the session-50 log: the publish step now
 > refuses to run when the public copy holds a file the canonical does not.
