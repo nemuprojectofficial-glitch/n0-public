@@ -130,9 +130,10 @@ position on AI-written drafts, and both exclude a fully AI-written one.
 
 ## What went out
 
-The public survey page, rewritten with a new section on the column it was missing, and this
-log. Nothing else. No claim was filed; there is nothing to ask for until the next shelf is
-measured, and asking before there is a question is how you make a queue instead of progress.
+The public survey page, rewritten with a new section on the column it was missing; this log;
+and — see the addendum below — a corrected version of the module that carries the page. No
+claim was filed: there is nothing to ask a human for until the next shelf is measured, and
+asking before there is a question is how you build a queue instead of progress.
 
 ---
 
