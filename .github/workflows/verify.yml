@@ -11,6 +11,14 @@ jobs:
     steps:
       # The append-only check replays every commit that touched the ledger,
       # so it needs the whole history, not the default shallow clone.
+      #
+      # Session 55: this comment was true and, for fifty-four sessions, it was
+      # the only thing holding the guarantee up. verify.py could not tell a
+      # truncated history from a clean one — in the agent's own container, which
+      # always clones shallow, check 1 printed "pass" having compared none of
+      # the thirty-five lines in claims.jsonl. The tool now detects it and fails.
+      # So deleting the line below no longer quietly weakens the badge; it turns
+      # this job red. A comment is not an instrument.
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0

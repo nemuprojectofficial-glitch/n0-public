@@ -329,6 +329,59 @@ def case_no_history():
         shutil.rmtree(repo, ignore_errors=True)
 
 
+def case_shallow_clone():
+    """A truncated history must not be reported with the same word as a clean one.
+
+    Check 1 walks `git log HEAD`. A shallow clone's oldest visible commit has no
+    parents as far as git is concerned, so every ledger line already present
+    there is never compared against anything — and, before this case existed,
+    the check printed "pass" over it.
+
+    Two assertions, because one alone would let the wrong fix through:
+      * by default the truncation fails the check;
+      * with --allow-shallow it does not fail, but it is still reported.
+    A fix that merely silenced the condition would pass the first and fail the
+    second.
+    """
+    source = make_repo(CLEAN)
+    clone = tempfile.mkdtemp(prefix="ledger-selftest-shallow-")
+    shutil.rmtree(clone, ignore_errors=True)
+    try:
+        # A second commit, so that depth-1 genuinely leaves history behind.
+        rows = deep_copy(CLEAN)
+        rows["external.jsonl"].append(dict(rows["external.jsonl"][-1], ts="2026-02-02T00:00:00Z"))
+        write_ledger(source, rows)
+        git(source, "commit", "-qam", "a later append")
+
+        code, _ = run("git", "clone", "-q", "--depth", "1", "file://" + source, clone)
+        if code != 0:
+            return "a shallow clone is not a clean pass: could not create the shallow clone"
+
+        code_default, result_default = verify(clone, NOW_BEFORE_DEADLINE)
+        fired = {f["check"] for f in result_default["failures"]}
+
+        code_allowed, out_allowed = run(
+            sys.executable, VERIFY, "--repo", clone, "--ledger", "audit",
+            "--initial-balance", "1000", "--now", NOW_BEFORE_DEADLINE, "--json",
+            "--allow-shallow")
+        allowed = json.loads(out_allowed)
+        allowed_fired = {f["check"] for f in allowed["failures"]}
+
+        ok = ("append_only" in fired and code_default == 1
+              and "append_only" not in allowed_fired
+              and allowed.get("shallow_clone")
+              and allowed.get("shallow_allowed") is True)
+        detail = ("expected append_only to fire by default (fired={}, exit={}) and to be reported "
+                  "but not enforced under --allow-shallow (fired={}, note={!r})".format(
+                      sorted(fired), code_default, sorted(allowed_fired), allowed.get("shallow_clone")))
+        print("{}  {}".format("ok  " if ok else "FAIL",
+                              "a shallow clone is reported, not passed"))
+        return None if ok else "a shallow clone is reported, not passed: " + detail
+    finally:
+        shutil.rmtree(source, ignore_errors=True)
+        shutil.rmtree(clone, ignore_errors=True)
+
+
 def main():
     failures = []
     tagged = ([(t, m, n, None, None) for t, m, n in CASES]
@@ -354,7 +407,8 @@ def main():
         finally:
             shutil.rmtree(repo, ignore_errors=True)
 
-    for extra_case in (case_merge_keeping_everything, case_merge_dropping_a_line, case_no_history):
+    for extra_case in (case_merge_keeping_everything, case_merge_dropping_a_line, case_no_history,
+                       case_shallow_clone):
         extra = extra_case()
         if extra:
             failures.append(extra)
@@ -366,7 +420,7 @@ def main():
         print("\n{} self-test(s) failed. verify.py is not checking what it claims to.".format(len(failures)))
         return 1
     print("verify.py handles all {} cases.".format(
-        len(CASES) + len(CASES_WITH_CUTOFF) + len(CASES_WITH_TS_CUTOFF) + 3))
+        len(CASES) + len(CASES_WITH_CUTOFF) + len(CASES_WITH_TS_CUTOFF) + 4))
     return 0
 
 

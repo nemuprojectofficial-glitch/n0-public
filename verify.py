@@ -73,6 +73,68 @@ def has_commits(repo):
     return proc.returncode == 0
 
 
+def is_shallow(repo):
+    """True if this clone's history is truncated (`git clone --depth`).
+
+    Check 1 walks `git log HEAD`. In a shallow clone that walk stops at the
+    graft point, which git presents as a parentless root. Every line that was
+    already in a ledger file at that boundary therefore has no parent to be
+    compared against, and the check passes over it in silence.
+
+    That is not a clean result, it is an absent one, and the two must not print
+    the same word. This project's own container clones shallow, and on the day
+    this was noticed check 1 reported "pass" having compared **none** of the
+    thirty-five lines in `claims.jsonl`.
+
+    The hazard was already known: `.github/workflows/verify.yml` sets
+    `fetch-depth: 0` and the comment above it says why. But knowing it in one
+    YAML comment is not the same as the tool knowing it — delete that line and
+    CI would have gone on printing a green badge over an unexamined history.
+    Now it goes red instead.
+    """
+    proc = subprocess.run(
+        ["git", "-C", repo, "rev-parse", "--is-shallow-repository"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+    )
+    if proc.returncode != 0:
+        return False
+    return proc.stdout.decode("utf-8", "replace").strip() == "true"
+
+
+def shallow_boundary_lines(repo, ledger_dir, files):
+    """{path: line count already present at the oldest commit we can see}.
+
+    Those are exactly the lines check 1 never compares against a parent.
+    """
+    try:
+        root = git(repo, "rev-list", "--max-parents=0", "HEAD").split()
+    except RuntimeError:
+        return {}
+    counts = {}
+    for name in files:
+        path = "{}/{}".format(ledger_dir, name) if ledger_dir else name
+        total = 0
+        for rev in root:
+            try:
+                text = git(repo, "show", "{}:{}".format(rev, path))
+            except RuntimeError:
+                continue
+            total = max(total, len(lines_of(text) or []))
+        if total:
+            counts[path] = total
+    return counts
+
+
+def shallow_message(repo, ledger_dir, files):
+    """One sentence naming exactly how much of the ledger went uncompared."""
+    uncompared = shallow_boundary_lines(repo, ledger_dir, files)
+    detail = ", ".join("{}: {} line(s)".format(p, n) for p, n in sorted(uncompared.items()))
+    return ("this clone is shallow, so the history before the graft point is not here; "
+            "lines already present at that boundary are never compared against a parent"
+            + (" — " + detail if detail else ""))
+
+
 def commit_graph(repo):
     """Every commit reachable from HEAD, oldest first, as (sha, [parents]).
 
@@ -150,7 +212,7 @@ def lines_of(text):
 # --- check 1: append-only ------------------------------------------------------
 
 
-def check_append_only(repo, ledger_dir, files):
+def check_append_only(repo, ledger_dir, files, allow_shallow=False):
     """No commit may change or drop a line that one of its parents already wrote.
 
     This is the one check that does not trust the agent at all: it reads the
@@ -179,6 +241,10 @@ def check_append_only(repo, ledger_dir, files):
         graph = commit_graph(repo)
     except RuntimeError as exc:
         return [Failure(CHECK_APPEND_ONLY, "(history)", str(exc))]
+
+    # A truncated history is an absent answer, not a clean one. See is_shallow().
+    if is_shallow(repo) and not allow_shallow:
+        return [Failure(CHECK_APPEND_ONLY, "(shallow clone)", shallow_message(repo, ledger_dir, files))]
 
     revs = []
     for sha, parents in graph:
@@ -608,6 +674,11 @@ def main(argv=None):
     parser.add_argument("--initial-balance", type=int, default=1000,
                         help="starting wallet balance for the balance check (default: 1000)")
     parser.add_argument("--json", action="store_true", dest="as_json", help="emit JSON instead of prose")
+    parser.add_argument("--allow-shallow", action="store_true",
+                        help="do not fail check 1 on a truncated clone. The truncation is still "
+                             "reported, with the number of lines it left uncompared. Meant for "
+                             "environments that only ever clone shallow; CI clones in full and "
+                             "must not pass this")
     parser.add_argument("--provenance-since", default=None, metavar="TS",
                         help="only require recorded_by/source on claim rows at or after this "
                              "ISO 8601 instant (default: every settled row). Old rows cannot be "
@@ -654,9 +725,16 @@ def main(argv=None):
     # kind of unearned reassurance this tool exists to avoid.
     history_available = has_commits(root)
 
+    # Reported whether or not it is enforced: a shallow clone must never be
+    # invisible in the output, because the word "pass" next to check 1 would
+    # otherwise mean something different from what a reader takes it to mean.
+    shallow_note = None
+    if history_available and is_shallow(root):
+        shallow_note = shallow_message(root, args.ledger, present)
+
     failures = []
     if history_available:
-        failures += check_append_only(root, args.ledger, present)
+        failures += check_append_only(root, args.ledger, present, args.allow_shallow)
     failures += check_external(root, args.ledger)
     failures += check_balance(root, args.ledger, args.initial_balance)
     failures += check_predictions(root, args.ledger, now)
@@ -676,6 +754,8 @@ def main(argv=None):
                 "ledger": args.ledger,
                 "files_present": present,
                 "append_only_applicable": history_available,
+                "shallow_clone": shallow_note,
+                "shallow_allowed": bool(args.allow_shallow),
                 "provenance_since": (provenance_since.isoformat().replace("+00:00", "Z")
                                      if provenance_since else None),
                 "ts_since": (ts_since.isoformat().replace("+00:00", "Z") if ts_since else None),
@@ -694,6 +774,12 @@ def main(argv=None):
         hits = by_check.get(check, [])
         if check == CHECK_APPEND_ONLY and not history_available:
             print("n/a   {}\n      nothing is committed yet, so there is no history to check".format(title))
+            continue
+        if check == CHECK_APPEND_ONLY and shallow_note and args.allow_shallow:
+            print("part  {}\n      {}\n      (--allow-shallow: reported, not enforced)".format(
+                title, shallow_note))
+            for failure in hits:
+                print(failure)
             continue
         print("{}  {}".format("FAIL" if hits else "pass", title))
         for failure in hits:
