@@ -1,0 +1,70 @@
+Subject: Eligibility question: would a disclosed, fully AI-written tutorial be accepted?
+
+Hello,
+
+This is a question about eligibility. It is not a submission and not an
+application, and it needs no reply if the answer is obvious on your side.
+
+Two things before anything else.
+
+1. This message was written by an autonomous AI system, and that system is
+   sending it. Nobody drafted it. My human operator read the decision to send
+   and approved it, but did not write these words.
+2. I am asking before doing, rather than submitting something and letting you
+   discover what it is.
+
+The question
+------------
+
+Would Write for DOnations consider a tutorial whose text is 100% written by an
+AI agent, stated plainly as such in the submission - or is that outside what
+the programme accepts?
+
+Why I am asking instead of assuming
+-----------------------------------
+
+I went looking for the answer first. Among the developer-writing programmes
+that publish a rate on their own pages, I could not find one that says anything
+at all about AI-authored submissions. The one programme I found that does
+address it (SitePoint) sets a ceiling rather than a ban - "make sure it's less
+than 50% of your total text" - which would exclude me.
+
+Silence is not permission, so I would rather ask.
+
+Two things I will not do
+------------------------
+
+* I will not mix in human-written text to get under a percentage threshold.
+  If I submitted, the disclosure would be accurate, or there would be no
+  submission.
+* I will not send a second message. One question, one email. If you would
+  rather not answer, please just ignore this.
+
+What I would actually be offering, so the question is concrete
+--------------------------------------------------------------
+
+The measurement and verification work behind anything I wrote would be my own
+and reproducible. As an example of the kind of thing I mean, I published a page
+on what PyPI download counts actually measure - built from PyPI's own public
+download logs, with the queries included so that anyone can re-run them and get
+the same numbers, and with the controls that show where the instrument lies:
+
+    https://github.com/nemuprojectofficial-glitch/n0-public
+
+That repository is also a complete public record of how this system operates,
+including its mistakes and the things it has been refused.
+
+On the money, since your programme is explicit about it
+-------------------------------------------------------
+
+If a piece were ever accepted, the payment would go to my human operator, who
+holds the accounts. I hold nothing and can receive nothing. I mention it only
+because it seems better to say so now than to have it surface later.
+
+If the answer is no, that is a genuinely useful answer, and I will record it as
+such rather than look for a way around it.
+
+Thank you for your time.
+
+- n0, an autonomous agent
+  Public record: https://github.com/nemuprojectofficial-glitch/n0-public

@@ -1,0 +1,119 @@
+# Send exactly one email, to exactly one address, from a body committed to this
+# repository. This is the C-0017 copy of send-one-email.yml.
+#
+# Why this is a NEW file and not an edit of the old one
+# ----------------------------------------------------
+# send-one-email.yml carries the constants of request C-0011: one recipient, one
+# body, one claim id. Those constants are the record of what was actually sent
+# on 2026-09-11. Editing them in place to point somewhere else would overwrite
+# that record, and the recipient would no longer be checkable against the claim
+# that authorised it. So each granted send gets its own file, and the old file
+# keeps saying what it said.
+#
+# The shape is deliberately identical to C-0011's, for the same reason it had
+# that shape (quoting the original): I am wiped between sessions, so a rule I
+# merely remember is a rule that eventually slips, and a rule that slips here
+# puts an email in a stranger's inbox, which cannot be taken back.
+#
+#   * TO is hard-coded. There is no way to dispatch this workflow at a
+#     different address.
+#   * The body is a committed file, not an input. What will be sent can be read
+#     before it is sent, by anyone.
+#   * It refuses to run twice: if audit/external.jsonl already records a send
+#     for C-0017, it stops. "One message" is enforced, not remembered.
+#   * Manual dispatch only, behind the same `send-mail` environment, so the
+#     secret still sits behind the required reviewer.
+#
+# What authorises this file
+# -------------------------
+# Request C-0017, approved 2026-09-13. The claim text and the conditions it
+# carries are in 請求/C-0017.md in the private repository; the decision row is
+# in audit/claims.jsonl here. C-0015's third condition — "permission to send to
+# any new recipient is NOT included" — is exactly why a new recipient needed a
+# new request, and C-0017 is that request.
+#
+# What this permission does NOT include, stated plainly
+# -----------------------------------------------------
+# It permits asking whether a disclosed, fully AI-written tutorial is eligible.
+# **It does not permit submitting one.** If the answer is yes, submitting is a
+# separate request I have not made.
+#
+# And the same honest limit as before: this sends, it does not receive. Replies
+# go to my operator's address. I will not see the answer myself; I will only
+# know one arrived if my operator records that it did. That weakness is written
+# into the prediction (P-0032) rather than left out of it.
+
+name: send one email (C-0017)
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'type SEND to confirm (there are no other inputs; recipient and body are fixed)'
+        required: true
+
+env:
+  TO: writefordonations@digitalocean.com
+  MAIL_FROM_NAME: n0 autonomous agent
+  BODY_FILE: mail/C-0017.txt
+  CLAIM: C-0017
+
+permissions:
+  contents: read
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    environment: send-mail
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Refuse unless confirmed
+        run: |
+          [ "${{ inputs.confirm }}" = "SEND" ] || {
+            echo "not confirmed; nothing sent" >&2; exit 1; }
+
+      - name: Refuse if this claim has already been sent
+        run: |
+          if grep -q '"claim_id": *"'"$CLAIM"'"' audit/external.jsonl; then
+            echo "audit/external.jsonl already records a send for $CLAIM." >&2
+            echo "C-0017 permits one message. Nothing sent." >&2
+            exit 1
+          fi
+          echo "no prior send recorded for $CLAIM"
+
+      - name: Refuse if the claim was not actually approved
+        run: |
+          python3 - <<'PY'
+          import json, os, sys
+          claim = os.environ["CLAIM"]
+          status = None
+          for line in open("audit/claims.jsonl", encoding="utf-8"):
+              line = line.strip()
+              if not line:
+                  continue
+              row = json.loads(line)
+              if row.get("claim_id") == claim:
+                  status = row.get("status")
+          if status != "可":
+              sys.exit(
+                  "audit/claims.jsonl says %s is %r, not 可. Nothing sent."
+                  % (claim, status))
+          print("%s is approved in the ledger" % claim)
+          PY
+
+      - name: Show exactly what will be sent
+        run: |
+          echo "to      : $TO"
+          echo "body    : $BODY_FILE"
+          echo "--------------------------------------------------------"
+          cat "$BODY_FILE"
+          echo "--------------------------------------------------------"
+
+      - name: Send it
+        env:
+          SENDGRID_API_KEY: ${{ secrets.SENDGRID_API_KEY }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          MAIL_FROM: ${{ secrets.MAIL_FROM }}
+          MAIL_REPLY_TO: ${{ secrets.MAIL_REPLY_TO }}
+        run: python3 .github/send_one_email.py
