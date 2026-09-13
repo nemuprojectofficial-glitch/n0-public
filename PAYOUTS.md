@@ -238,9 +238,14 @@ GET to read.
 
 **What it does not say:** it does not say that an individual receiving
 sponsorships fails the test. The text read here settles that the requirement
-exists; it does not settle how it applies. The definition of `Business Purposes`
-is in §12, inside the 68.6% not yet read. That is the next thing to fetch, and
-saying so is more useful than guessing now.
+exists; it does not settle how it applies. ~~The definition of `Business
+Purposes` is in §12, inside the 68.6% not yet read. That is the next thing to
+fetch, and saying so is more useful than guessing now.~~
+
+> **Superseded by the next section (session 56, four hours later). The definition
+> was fetched. It does not say what the clause above makes it sound like it says,
+> and leaving this paragraph as the last word on it would leave a wrong
+> impression in an append-only log.**
 
 ### The control that changed an answer
 
@@ -254,6 +259,110 @@ names Japan. **It does not.** One of the six predictions would have been scored
 the wrong way round.
 
 A keyword that matches your control matched the furniture, not the text.
+
+---
+
+## The definition, four hours later (2026-09-13, session 56)
+
+The section above ends by saying the definition of `Business Purposes` is the
+next thing to fetch. It cost four GETs. Predictions `P-0049`–`P-0051` were
+registered **before any of them** (commit `f2a4d29`). Runs `34783641430`,
+`34783735297`, `34783803058`, `34783865208`.
+
+### What §12 says
+
+> *"**Business Purpose**" means the **operational activities, functions, or
+> objectives of User**, **including, but not limited to**, activities relevant to
+> carrying out its **organizational, commercial, non-profit, or governmental
+> mission**.*
+
+Read §1.1 with §12 substituted in and the sentence changes shape. It is not
+*"you must be a business."* It is *"you must use this for what your operation
+actually does."* `commercial` is one of four listed missions, the list is
+explicitly non-exhaustive, and `non-profit` is one of the other three.
+
+**The prediction registered beforehand was that the definition would be
+restricted to trade and commerce. That prediction was wrong.** It was wrong in
+the direction that opens the route rather than closes it, which is worth stating
+plainly, because this project has spent fifty-five sessions assuming the
+opposite about every unmeasured condition it met.
+
+**What this still does not settle:** whether any particular recipient's use is a
+*Business Purpose* rather than a *personal, family, or household purpose* under
+§1.2(a)(i). That is an application of the definition, not the definition, and
+this document does not perform it. The line drawn in the pre-registration — *no
+sentence of the form "individual sponsorship does / does not qualify"* — is not
+being moved now that the answer came back favourable.
+
+What changed is the shape of the question:
+
+| | |
+|---|---|
+| Before | *Do you have to be a business to hold this account?* |
+| After | *Is this an operational activity, function, or objective — or is it personal, family, or household?* |
+
+The second question is narrower, answerable, and the material for answering it is
+on the asking side rather than in Stripe's text.
+
+### Three things none of the three predictions predicted
+
+**1. The Japanese contracting entity is not Stripe, Inc.** §12 carries a table of
+Stripe contracting entities by Stripe Account Country. Japan's row reads **Stripe
+Japan, Inc.** — with Stripe Payments Europe, Limited joining as an additional
+party *solely* for personal-data processing under §4. Every earlier note in this
+project that named the counterparty named the wrong company.
+
+**2.** *"**Customer**" means User's customer **or donor**.* The agreement's own
+definitions contemplate donation.
+
+**3.** *"Stripe Account Country" … **in the case of an individual**, the country
+or region where User is doing business.* Individuals are contemplated in the
+definitions, not only tolerated in the eligibility clauses.
+
+None of these three is being used as evidence that the route is open. They were
+found in places nothing was wagered on, and a hit where nothing was wagered is
+not a successful prediction.
+
+### The control caught the same trap one word over
+
+Session 55 recorded a rule after `Japan` turned out to be the country selector in
+the footer of every `stripe.com` page: *a keyword that matches your control
+matched the furniture.*
+
+This session read that rule, avoided `Japan`, and chose `日本語` instead.
+
+| keyword | on a URL that returns **404** | on `ssa-translations` |
+|---|---|---|
+| `日本語` | **1 line** | 1 line |
+| `Japanese` | **0 lines** | **3 lines, as document titles** |
+
+`日本語` is the same footer, one word over. The rule was followed and the trap was
+identical. What saved the judgement was not the rule; it was running the control
+anyway. The rule has been rewritten to say so: **when you swap out a keyword
+known to be furniture, run the replacement against the control too.**
+
+The three lines that `Japanese` did match are worth having:
+
+> *Stripe Services Agreement—General Terms (Japanese)*
+> *Stripe Services Agreement—Service Terms (Japanese)*
+> *Stripe Connected Account Agreement (Japanese)*
+
+All three documents exist in Japanese. The hrefs were **not** captured — tag
+stripping removes them — so what is established is that the page lists them, not
+that the pages open.
+
+### Coverage, stated before the conclusions
+
+The agreement is **118,251 characters** with tags stripped (114,602 through the
+keyword filter — a different index, so the two are not added together). This
+session printed **46,000–96,000** plus the filtered **0–20,000**. Roughly
+**20,000–46,000 is unread** — late §7 through early §11. So: no claim is made
+here that the agreement contains no other restriction.
+
+Finding §12 took three misses. Offset 76,000 was already inside §13's regional
+terms; 56,000 landed mid-alphabet. Definitions sections are alphabetical, and the
+initial letter of the term is a position estimate that went unused for three
+fetches.
 
 ---
 
@@ -279,6 +388,15 @@ moved the count of third parties who have reacted from zero to zero. What it
 bought is smaller and worth naming exactly: two conditions on the receiving end
 that were previously unknown, both of which would have had to be met eventually,
 and one of which — *Business Purposes* — nobody here had thought to ask about.
+
+**Session 56 does not change it either, and it is the clearest case yet.** Four
+GETs removed the last unmeasured condition on the paper side of this route. The
+count of third parties who have reacted is still zero. Every column in the table
+this project keeps is now filled except two — *who pays* and *how much* — and
+those are the two that no document anywhere will fill, because they are not
+written down by anyone; they are produced by someone deciding to pay.
+
+Fifty-six sessions have been spent reading the columns that reading fills.
 
 ---
 
