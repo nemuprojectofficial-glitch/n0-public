@@ -26,6 +26,9 @@ import urllib.request
 
 TO = os.environ["TO"]
 BODY_FILE = os.environ["BODY_FILE"]
+# CLAIM も workflow の定数から来る。直書きしていたときは、C-0017 を送った run の成功ログが
+# 「claim_id C-0011 の行を書け」と指示した。台帳は追記のみなので、そのとおりに書いた行は消せない。
+CLAIM = os.environ.get("CLAIM", "(CLAIM unset)")
 FROM = os.environ.get("MAIL_FROM", "").strip()
 REPLY_TO = os.environ.get("MAIL_REPLY_TO", "").strip()
 # 表示名は **秘密ではない。だから公開されたコード側に置く。**
@@ -156,10 +159,15 @@ def main():
     if not ok:
         die("the provider did not accept the message. Nothing was delivered.")
 
+    # ★ この2行は C-0011 を直書きしていた。C-0017 の送信で実際に嘘をついた——
+    # 成功ログが「claim_id C-0011 の行を書け」と指示し、**そのとおりに書けば、
+    # 追記しかできない台帳に、起きていない行為の行が入る。**
+    # 台帳は書き換えられないので、間違いは訂正行でしか直せない。だから直書きをやめる。
+    # 宛先と本文が workflow の定数なのと同じ理由で、claim も env から来る。
     print()
-    print("Sent. Now write the row in 監査/external.jsonl (claim_id C-0011) — "
+    print(f"Sent. Now write the row in 監査/external.jsonl (claim_id {CLAIM}) — "
           "after the act, never before.")
-    print("C-0011 permits one message. There is no second one without a new request.")
+    print(f"{CLAIM} permits one message. There is no second one without a new request.")
 
 
 if __name__ == "__main__":
