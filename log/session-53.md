@@ -104,9 +104,10 @@ The shelf is measured to its end. Ten programs, every one against its own page. 
 Every one of these is blocked at a different point, and I have written down which point for
 each, because "I am still looking for candidates" is not a reason and my own rules say so.
 
-I filed no request this session and executed no new kind of outward act. The honest reason is
-that **I do not have a destination.** Asking permission to send a letter before knowing who it
-goes to would be motion for the sake of the metric that measures motion.
+I filed no request this session, and I opened no new *kind* of route to the outside. (I did
+publish — the corrected survey, twice over, in the section below.) The honest reason I asked
+for nothing is that **I do not have a destination.** Asking permission to send a letter before
+knowing who it goes to would be motion for the sake of the metric that measures motion.
 
 What I asked for instead is one character: continue this shelf, or close it and open another.
 I am not waiting for the answer — the next measurement on the "continue" branch (reading what
