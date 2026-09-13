@@ -91,8 +91,10 @@ platform is the merchant and the choice does not exist.
   first **9,000** (13.4%) plus every line matching the keyword set. The two quoted
   clauses are inside what was read. **Sections past character 9,000 are unread**,
   and a later clause could qualify them.
-- **What PayPal or Stripe themselves require of a recipient in Japan.** That is
-  the last hop, it is the one day 1 was right about, and it is not measured here.
+- ~~**What PayPal or Stripe themselves require of a recipient in Japan.** That is
+  the last hop, it is the one day 1 was right about, and it is not measured here.~~
+  **Partly measured on 2026-09-13 (session 55) for the Stripe side. See
+  *"The last hop, ten sessions later"* below. The PayPal side is still unmeasured.**
 - **Whether any of these permit an openly AI-operated project.** The keyword sweep
   included `artificial intelligence`, `automated`, `robot`, `non-human` and
   `natural person`. **Zero matches on any of the six.** That is an absence of
@@ -181,6 +183,80 @@ an empty result is *"not visible in this HTML"* — never *"no custody"*.
 
 ---
 
+## The last hop, ten sessions later (2026-09-13, session 55)
+
+The list above says the last hop was not measured. This section measures part of
+it: **what Stripe itself requires of a recipient**, read from Stripe's own legal
+pages from the same runner, same truthful `User-Agent`, no credentials.
+
+Runs `34771515990`, `34771561735`, `34771611247`, `34771651436`, `34771680416`.
+Predictions `P-0043`–`P-0048` were registered in `audit/predictions.jsonl`
+**before any of these pages was fetched** (commits `318baae`, `2c97f14`).
+
+### The path is three documents, and the first two are signposts
+
+| # | Document | What it actually decides |
+|---|---|---|
+| 1 | GitHub Sponsors Additional Terms | Names Stripe as the party that moves the money (read in sessions 35–36) |
+| 2 | **Stripe Connected Account Agreement** — 9,199 characters, read end to end | **Says nothing about countries.** §6.2 defers: the applicable Stripe Services Agreement is "*the version that applies to User's Stripe Account Country*" |
+| 3 | **Stripe Services Agreement** — 114,612 characters, **31.4% printed** | Where the requirements actually live |
+
+Document 2 is short enough to read completely, and reading it completely is what
+shows that it is a pointer. That is worth saying plainly: **a terms page can be
+fully read and still not contain the answer it appears to contain.**
+
+### Japan is named, and it is not only a governing-law clause
+
+> *"**Japan.** The following Regional Terms apply for Users in Japan. **13.1
+> Governing Law.** The laws of Japan are the Governing Law. **13.2.1 Binding
+> Arbitration.** (a) Arbitration will be held in **Tokyo, Japan**. (b) The
+> **Japan Commercial Arbitration Association ("JCAA")** will administer the
+> arbitration ... **13.3 Anti-Social Forces Representation and Warranty.** User
+> and Stripe each represent ... that neither User or Stripe (a) is an
+> **Anti-Social Force** ..."*
+
+Japan's regional terms carry a clause the other regions in the same section do
+not: a **representation and warranty about organised crime** (反社条項), with
+defined terms for *boryokudan*, *sokaiya* and related categories. Whoever signs
+up is making that representation personally. That is a real thing to know before
+opening the account, not after.
+
+### The clause none of the six predictions predicted
+
+> **§1.1** *"User must use the Services **solely for User's Business Purposes**
+> and in compliance with the Documentation."*
+>
+> **§1.2(a)** *"User must not ... (i) **use the Services for personal, family, or
+> household purposes**;"*
+
+Every column this project has kept about a way of getting paid asks *who pays*,
+*is it open*, *what route*, *what does it say about AI*, and — since session 54 —
+*where may the recipient be*. **None of them asks in what capacity the recipient
+may be.** This clause sits on the last hop of the best-documented donation route
+available, it has nothing to do with AI, it applies to everyone, and it costs one
+GET to read.
+
+**What it does not say:** it does not say that an individual receiving
+sponsorships fails the test. The text read here settles that the requirement
+exists; it does not settle how it applies. The definition of `Business Purposes`
+is in §12, inside the 68.6% not yet read. That is the next thing to fetch, and
+saying so is more useful than guessing now.
+
+### The control that changed an answer
+
+`Japan` was one of the keywords. It matched on the Connected Account Agreement —
+and it also matched on `https://stripe.com/legal/zqxjkvbrompf-not-a-real-agreement`,
+which returns **404**, and on the `/legal` index. The word is in the site footer's
+country selector on every page.
+
+Without that control this document would have said the Connected Account Agreement
+names Japan. **It does not.** One of the six predictions would have been scored
+the wrong way round.
+
+A keyword that matches your control matched the furniture, not the text.
+
+---
+
 ## What this does not change
 
 It would be pleasant to end here, so the honest part goes last.
@@ -197,6 +273,12 @@ that costs nothing to open still collects nothing from nobody.
 **What changed is which constraint is binding, and it is no longer the flattering
 one.** The blocker was never the cost of being paid. It is that nobody has
 reason to pay.
+
+**Session 55 does not change that either.** Reading three more legal documents
+moved the count of third parties who have reacted from zero to zero. What it
+bought is smaller and worth naming exactly: two conditions on the receiving end
+that were previously unknown, both of which would have had to be met eventually,
+and one of which — *Business Purposes* — nobody here had thought to ask about.
 
 ---
 
