@@ -538,7 +538,7 @@ def commit_dates(repo):
     return dates
 
 
-def check_ts_not_after_commit(repo, ledger_dir, files, since=None):
+def check_ts_not_after_commit(repo, ledger_dir, files, since=None, ack=None):
     """A ledger row's `ts` says when the thing happened. The commit that first
     carries that row says when it was written down. Writing down comes after
     happening, so `ts` can never be later than its own commit.
@@ -560,6 +560,20 @@ def check_ts_not_after_commit(repo, ledger_dir, files, since=None):
     Tolerance is zero and deliberately so. Skew in the honest direction — a row
     stamped before its commit — is normal and unremarked. Skew in this
     direction has no honest cause.
+
+    ★ `ack` exists because on 2026-09-14 this repository broke the rule *after*
+    adopting it: three pre-registered prediction rows stamped 09:28:40Z arrived
+    in a commit made 09:26:28Z — the same habit named below, two minutes of it,
+    written by a session that had the clock available and typed a number
+    instead of reading it. Append-only means those rows can never be corrected.
+
+    The obvious repair is to push `--ts-since` past them. That repair is worse
+    than the disease: a date can be advanced to step over anything, including a
+    violation not yet committed, and advancing it leaves nothing behind that
+    says what was stepped over. So the escape hatch here has to *name* each row
+    it excuses — `監査/predictions.jsonl line 116` — and a name that no longer
+    matches a violating row is itself reported. The list can only be read, not
+    quietly widened, and a future violation cannot fall through it by accident.
 
     `since` exists for the same reason check 5 has it: an existing ledger
     cannot be retrofitted, because rewriting the offending rows is the one
@@ -633,12 +647,27 @@ def check_ts_not_after_commit(repo, ledger_dir, files, since=None):
                 if since is not None and ts < since:
                     continue        # rule adopted from a date; older rows stay visible as they are
                 ahead = (ts - when).total_seconds()
+                where = "{} line {}".format(path, lineno)
+                if ack is not None and where in ack:
+                    ack[where] = True       # named, permanent, and still printed
+                    continue
                 failures.append(Failure(
                     CHECK_TS_NOT_FUTURE,
                     "{} line {} @ {}".format(path, lineno, sha[:8]),
                     "row is stamped {} but its commit was made {} — {:.0f} minute(s) "
                     "in the future, so the row cannot be a record of what happened".format(
                         row.get("ts"), when.isoformat().replace("+00:00", "Z"), ahead / 60.0)))
+
+    # An acknowledgement that no longer matches a violating row is itself a
+    # failure. Without this the list only ever grows, and a list that can grow
+    # without being read is the same shape as no list.
+    if ack:
+        for where, hit in sorted(ack.items()):
+            if not hit:
+                failures.append(Failure(
+                    CHECK_TS_NOT_FUTURE, where,
+                    "acknowledged as a known future-stamped row, but no such violation "
+                    "is there. A stale acknowledgement hides the next real one — remove it."))
     return failures
 
 
@@ -689,6 +718,12 @@ def main(argv=None):
                              "commit) to rows at or after this ISO 8601 instant. Offending rows "
                              "cannot be corrected without breaking the append-only check, so an "
                              "existing ledger adopts check 6 from a date forward.")
+    parser.add_argument("--ts-ack", default="", metavar="LIST",
+                        help="comma-separated 'path line N' entries naming rows already known to "
+                             "be stamped after their own commit. Append-only forbids correcting "
+                             "them, and moving --ts-since past them would also step over rows not "
+                             "yet written, so each one is named instead. An entry that does not "
+                             "match a violating row is reported as stale.")
     parser.add_argument("--now", default=None,
                         help="ISO 8601 instant to evaluate deadlines against (default: now, UTC)")
     args = parser.parse_args(argv)
@@ -740,7 +775,8 @@ def main(argv=None):
     failures += check_predictions(root, args.ledger, now)
     failures += check_decision_provenance(root, args.ledger, provenance_since)
     if history_available:
-        failures += check_ts_not_after_commit(root, args.ledger, present, ts_since)
+        ts_ack = {e.strip(): False for e in args.ts_ack.split(",") if e.strip()}
+        failures += check_ts_not_after_commit(root, args.ledger, present, ts_since, ts_ack)
 
     by_check = {}
     for failure in failures:
@@ -759,6 +795,7 @@ def main(argv=None):
                 "provenance_since": (provenance_since.isoformat().replace("+00:00", "Z")
                                      if provenance_since else None),
                 "ts_since": (ts_since.isoformat().replace("+00:00", "Z") if ts_since else None),
+                "ts_ack": sorted(e.strip() for e in args.ts_ack.split(",") if e.strip()),
                 "ok": not failures,
                 "failures": [f.as_dict() for f in failures],
             },

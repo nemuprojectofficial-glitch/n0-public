@@ -82,10 +82,12 @@ def make_repo(rows_by_file):
     return repo
 
 
-def verify(repo, now, provenance_since=None, ts_since=None):
+def verify(repo, now, provenance_since=None, ts_since=None, ts_ack=None):
     extra = ["--provenance-since", provenance_since] if provenance_since else []
     if ts_since:
         extra += ["--ts-since", ts_since]
+    if ts_ack:
+        extra += ["--ts-ack", ts_ack]
     code, out = run(sys.executable, VERIFY, "--repo", repo, "--ledger", "audit",
                     "--initial-balance", "1000", "--now", now, "--json", *extra)
     return code, json.loads(out)
@@ -219,6 +221,21 @@ CASES_WITH_CUTOFF = [
 ]
 
 # Cases that need check 6's adoption date moved past the offending row.
+# Cases that name an individual offending row instead of moving check 6's date.
+# ★ Added 2026-09-14, after this repository broke check 6 two minutes after
+# having the clock available. A date can be advanced past a violation that has
+# not been written yet; a name cannot. So the escape hatch has to say which row.
+CASES_WITH_TS_ACK = [
+    ("a named future-stamped row is excused, and only that one",
+     case_future_stamped_row, NOW_BEFORE_DEADLINE, "audit/external.jsonl line 2", None),
+    ("an acknowledgement that matches nothing is itself a failure",
+     case_clean, NOW_BEFORE_DEADLINE, "audit/external.jsonl line 3",
+     "row_ts_not_after_commit"),
+    ("naming the wrong row does not excuse the real one",
+     case_future_stamped_row, NOW_BEFORE_DEADLINE, "audit/claims.jsonl line 99",
+     "row_ts_not_after_commit"),
+]
+
 CASES_WITH_TS_CUTOFF = [
     ("a future-stamped row from before check 6's cutoff is left alone",
      case_future_row_before_cutoff, NOW_BEFORE_DEADLINE, "2031-01-01T00:00:00Z"),
@@ -407,6 +424,27 @@ def main():
         finally:
             shutil.rmtree(repo, ignore_errors=True)
 
+    # The acknowledgement cases override what the mutation would otherwise
+    # expect: naming the row is supposed to turn a firing check quiet, and only
+    # that row.
+    for title, mutate, now, ack, expected in CASES_WITH_TS_ACK:
+        repo = make_repo(CLEAN)
+        try:
+            mutate(repo)
+            code, result = verify(repo, now, None, None, ack)
+            fired = {f["check"] for f in result["failures"]}
+            if expected is None:
+                ok = result["ok"] and code == 0
+                detail = "expected a clean pass, got: {}".format(sorted(fired) or "exit %d" % code)
+            else:
+                ok = expected in fired and code == 1
+                detail = "expected {!r} to fire, fired: {}".format(expected, sorted(fired) or "nothing")
+            print("{}  {}".format("ok  " if ok else "FAIL", title))
+            if not ok:
+                failures.append("{}: {}".format(title, detail))
+        finally:
+            shutil.rmtree(repo, ignore_errors=True)
+
     for extra_case in (case_merge_keeping_everything, case_merge_dropping_a_line, case_no_history,
                        case_shallow_clone):
         extra = extra_case()
@@ -420,7 +458,8 @@ def main():
         print("\n{} self-test(s) failed. verify.py is not checking what it claims to.".format(len(failures)))
         return 1
     print("verify.py handles all {} cases.".format(
-        len(CASES) + len(CASES_WITH_CUTOFF) + len(CASES_WITH_TS_CUTOFF) + 4))
+        len(CASES) + len(CASES_WITH_CUTOFF) + len(CASES_WITH_TS_CUTOFF)
+        + len(CASES_WITH_TS_ACK) + 4))
     return 0
 
 

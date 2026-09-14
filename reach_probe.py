@@ -114,6 +114,29 @@ REFERENCE_PROJECT = "requests"
 # end cannot be tripped by a quiet weekend — only by a partial read.
 REFERENCE_FLOOR = 100_000
 
+# ★ Fixed 2026-09-14. `pypi.pypi_downloads_per_day` holds SEVERAL rows per
+# (project, date), not one. This check used to read a single row —
+#
+#     SELECT date, count ... ORDER BY date DESC LIMIT 1
+#
+# — and compare that one row against a floor meant for the day's total. Which
+# row came back was the endpoint's choice. Measured on 2026-09-13, requests had
+# six rows:
+#
+#     58,700 · 211,622 · 1,892,934 · 5,235,594 · 18,690,653 · 967,122
+#     sum = 27,056,625, which equals the installer table's independent sum
+#     for the same day, to the digit.
+#
+# The row that came back was 58,700 — 0.22% of the day — so the control
+# declared a complete read unreliable. On 2026-09-11 the same code drew
+# 35,081,158 of a true 42,483,582: it passed, and printed a number 17.4% short
+# as a fact about the dataset.
+#
+# So this control failed in both directions, and its own docstring named the
+# disease: *an instrument that cannot say "I don't know" will say something
+# else instead.* The part that could say "I don't know" was the broken part.
+# It now sums the day.
+
 UA = "reach-probe (read-only; github.com/nemuprojectofficial-glitch/n0-public)"
 
 # Installers a person can be at the other end of. Anything not listed is counted
@@ -200,8 +223,9 @@ def freshness(fetch=ask):
     never over-reports.
     """
     ref, err1 = fetch(
-        "SELECT date AS d, count AS c FROM {} WHERE project = {} "
-        "ORDER BY date DESC LIMIT 1".format(DAILY, sql_literal(REFERENCE_PROJECT)))
+        "SELECT date AS d, sum(count) AS c FROM {} WHERE project = {} "
+        "GROUP BY date ORDER BY date DESC LIMIT 1"
+        .format(DAILY, sql_literal(REFERENCE_PROJECT)))
     whole, err2 = fetch("SELECT max(date) AS d FROM {}".format(TABLE))
 
     ref_day = ref[0].get("d") if ref else None
@@ -378,6 +402,22 @@ def selftest():
         return [{"d": "2026-09-11"}], None
     check("a reference older than the whole-table scan fails",
           freshness(fetch=backwards)["reliable"] is False)
+
+    # 6c. ★ The regression this control shipped with until 2026-09-14: the
+    #     reference day is made of several rows, and reading one of them is not
+    #     reading the day. The fixture answers the way the live endpoint does —
+    #     one row per fetch unless the statement aggregates — so the check can
+    #     only pass if the statement asks for the sum.
+    def per_day_is_many_rows(sql, timeout=30):
+        if "WHERE project" not in sql:
+            return [{"d": "2026-09-13"}], None
+        rows = [58700, 211622, 1892934, 5235594, 18690653, 967122]
+        if "sum(count)" in sql and "GROUP BY date" in sql:
+            return [{"d": "2026-09-13", "c": str(sum(rows))}], None
+        return [{"d": "2026-09-13", "c": str(rows[0])}], None      # one arbitrary row
+    f = freshness(fetch=per_day_is_many_rows)
+    check("the reference day is summed, not sampled from one of its rows",
+          f["reliable"] is True and f["latest_day_count"] == 27056625)
 
     # 7. The project name reaches the query as a value, never as syntax.
     check("a quote in a project name is escaped",
