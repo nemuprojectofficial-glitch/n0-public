@@ -82,12 +82,14 @@ def make_repo(rows_by_file):
     return repo
 
 
-def verify(repo, now, provenance_since=None, ts_since=None, ts_ack=None):
+def verify(repo, now, provenance_since=None, ts_since=None, ts_ack=None, history_ack=None):
     extra = ["--provenance-since", provenance_since] if provenance_since else []
     if ts_since:
         extra += ["--ts-since", ts_since]
     if ts_ack:
         extra += ["--ts-ack", ts_ack]
+    if history_ack:
+        extra += ["--history-ack", history_ack]
     code, out = run(sys.executable, VERIFY, "--repo", repo, "--ledger", "audit",
                     "--initial-balance", "1000", "--now", now, "--json", *extra)
     return code, json.loads(out)
@@ -399,6 +401,78 @@ def case_shallow_clone():
         shutil.rmtree(clone, ignore_errors=True)
 
 
+def case_history_ack():
+    """--history-ack must excuse exactly the break it names, and nothing else.
+
+    ★ Added 2026-09-15, in the same session that added the flag. The flag is an
+    escape hatch cut into check 1 — the one check that reads git objects and
+    trusts the agent with nothing — so it is the single most dangerous thing in
+    this file. A broken --ts-ack costs a red build. A broken --history-ack would
+    let a real, silent loss of ledger lines be waved through by a name.
+
+    Three assertions, because any one alone lets a wrong implementation pass:
+
+      * the named break stops failing the check (otherwise the flag does nothing);
+      * a name that matches no break is itself a failure (otherwise the list of
+        excuses can grow quietly, which is the whole reason --ts-ack exists);
+      * naming the wrong break does not excuse the real one (otherwise any
+        plausible-looking string disarms the check).
+
+    The third is the one that matters. An implementation that simply drops every
+    append_only failure whenever --history-ack is non-empty passes the first two.
+    """
+    title = "a named history break is excused, and only that one"
+    results = []
+    repo = make_repo(CLEAN)
+    try:
+        # Rewrite a committed line in predictions.jsonl rather than money.jsonl:
+        # editing an amount would also trip the balance check, and this case has
+        # to be able to assert a *completely* clean exit once the break is named.
+        rows = deep_copy(CLEAN)
+        rows["predictions.jsonl"][0]["x"] = "a quietly reworded prediction"
+        write_ledger(repo, rows)
+        git(repo, "commit", "-qam", "quietly reword yesterday's prediction")
+        _, head = run("git", "-C", repo, "rev-parse", "HEAD")
+        sha = head.strip()[:8]
+        real = "audit/predictions.jsonl @ {}".format(sha)
+
+        # 1. naming the real break clears it
+        code, result = verify(repo, NOW_BEFORE_DEADLINE, history_ack=real)
+        fired = {f["check"] for f in result["failures"]}
+        results.append(("append_only" not in fired and code == 0,
+                        "naming the real break did not clear it (fired={}, exit={})".format(
+                            sorted(fired), code)))
+        # and it is still printed, not folded into "pass"
+        results.append((len(result.get("acknowledged_history_breaks") or []) == 1,
+                        "the acknowledged break was not reported back"))
+
+        # 2. naming the wrong break leaves the real one firing
+        code, result = verify(repo, NOW_BEFORE_DEADLINE,
+                              history_ack="audit/predictions.jsonl @ 0badbad0")
+        fired = {f["check"] for f in result["failures"]}
+        results.append(("append_only" in fired and code == 1,
+                        "naming the wrong break excused the real one (fired={}, exit={})".format(
+                            sorted(fired), code)))
+    finally:
+        shutil.rmtree(repo, ignore_errors=True)
+
+    # 3. on a clean ledger, an acknowledgement matching nothing is itself a failure
+    repo = make_repo(CLEAN)
+    try:
+        code, result = verify(repo, NOW_BEFORE_DEADLINE,
+                              history_ack="audit/predictions.jsonl @ 0badbad0")
+        fired = {f["check"] for f in result["failures"]}
+        results.append(("append_only" in fired and code == 1,
+                        "a stale acknowledgement did not fail (fired={}, exit={})".format(
+                            sorted(fired), code)))
+    finally:
+        shutil.rmtree(repo, ignore_errors=True)
+
+    bad = [detail for ok, detail in results if not ok]
+    print("{}  {}".format("ok  " if not bad else "FAIL", title))
+    return None if not bad else "{}: {}".format(title, "; ".join(bad))
+
+
 def main():
     failures = []
     tagged = ([(t, m, n, None, None) for t, m, n in CASES]
@@ -446,7 +520,7 @@ def main():
             shutil.rmtree(repo, ignore_errors=True)
 
     for extra_case in (case_merge_keeping_everything, case_merge_dropping_a_line, case_no_history,
-                       case_shallow_clone):
+                       case_shallow_clone, case_history_ack):
         extra = extra_case()
         if extra:
             failures.append(extra)
@@ -459,7 +533,7 @@ def main():
         return 1
     print("verify.py handles all {} cases.".format(
         len(CASES) + len(CASES_WITH_CUTOFF) + len(CASES_WITH_TS_CUTOFF)
-        + len(CASES_WITH_TS_ACK) + 4))
+        + len(CASES_WITH_TS_ACK) + 5))
     return 0
 
 
