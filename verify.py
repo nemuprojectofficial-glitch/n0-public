@@ -724,6 +724,12 @@ def main(argv=None):
                              "them, and moving --ts-since past them would also step over rows not "
                              "yet written, so each one is named instead. An entry that does not "
                              "match a violating row is reported as stale.")
+    parser.add_argument("--history-ack", default="", metavar="LIST",
+                        help="comma-separated 'path @ sha' entries naming append-only breaks "
+                             "already known to be in this repository's history. History cannot be "
+                             "corrected without rewriting it, which is itself the thing check 1 "
+                             "exists to forbid, so each break is named instead. An entry that "
+                             "does not match a real break is reported as stale.")
     parser.add_argument("--now", default=None,
                         help="ISO 8601 instant to evaluate deadlines against (default: now, UTC)")
     args = parser.parse_args(argv)
@@ -767,9 +773,43 @@ def main(argv=None):
     if history_available and is_shallow(root):
         shallow_note = shallow_message(root, args.ledger, present)
 
+    # ★ セッション65（2026-09-15）で足した。**逃げ道ではなく、名簿。**
+    #
+    # 写し（n0-public）の履歴には、二度と直せない破れが2箇所ある。どちらも事故として既に
+    # 記録されているものの、**記録されていなかった半分**：
+    #
+    #   audit/external.jsonl    @ 7b80af99  3行が消えた（2026-09-11T13:50Z・セッション43）
+    #   audit/predictions.jsonl @ 7b80af99  1行が消えた（同じコミット）
+    #   audit/predictions.jsonl @ 5dbd8a6d  55行目が書き換わった（2026-09-12T17:45Z・セッション49）
+    #
+    # **直す方法は、履歴を書き換えること1つ。それは検査1 が禁じているものそのもの。**
+    # 放っておけば、この検査は永久に赤のままで、**次の本物の破れが見えなくなる。**
+    # verify.py 自身が --ts-ack について書いている一文が、そのまま当てはまる——
+    #   *"A stale acknowledgement hides the next real one."* **赤も同じように隠す。**
+    #
+    # だから --ts-ack と同じ形にする：**跨ぐものに、名前を言わせる。**
+    #   ・当たらない名前は、それ自体が失敗として報告される（名簿は黙って伸びない）
+    #   ・当たった名前は、pass の側ではなく **専用の見出しで毎回印字される**（黙って消えない）
+    #
+    # **正本（n0/監査）の履歴には、この破れは1つも無い。名簿が要るのは写しの側だけ。**
+    history_ack = {e.strip(): False for e in args.history_ack.split(",") if e.strip()}
+    acknowledged = []
+
     failures = []
     if history_available:
-        failures += check_append_only(root, args.ledger, present, args.allow_shallow)
+        for f in check_append_only(root, args.ledger, present, args.allow_shallow):
+            key = f.where.replace(" (merge)", "").strip()
+            if key in history_ack:
+                history_ack[key] = True
+                acknowledged.append(f)
+            else:
+                failures.append(f)
+        for entry, hit in sorted(history_ack.items()):
+            if not hit:
+                failures.append(Failure(
+                    CHECK_APPEND_ONLY, entry,
+                    "acknowledged as a known history break, but no such break is there. "
+                    "A stale acknowledgement hides the next real one — remove it."))
     failures += check_external(root, args.ledger)
     failures += check_balance(root, args.ledger, args.initial_balance)
     failures += check_predictions(root, args.ledger, now)
@@ -796,6 +836,8 @@ def main(argv=None):
                                      if provenance_since else None),
                 "ts_since": (ts_since.isoformat().replace("+00:00", "Z") if ts_since else None),
                 "ts_ack": sorted(e.strip() for e in args.ts_ack.split(",") if e.strip()),
+                "history_ack": sorted(history_ack),
+                "acknowledged_history_breaks": [f.as_dict() for f in acknowledged],
                 "ok": not failures,
                 "failures": [f.as_dict() for f in failures],
             },
@@ -821,6 +863,15 @@ def main(argv=None):
         print("{}  {}".format("FAIL" if hits else "pass", title))
         for failure in hits:
             print(failure)
+    # 承認した破れは、pass の陰に隠さない。**毎回、名前と中身のまま印字する。**
+    # 「緑である」と「破れが無い」は別のことで、この見出しが両者の差を毎回見せる。
+    if acknowledged:
+        print()
+        print("ack   {} known history break(s), named on the command line and not corrected:".format(
+            len(acknowledged)))
+        for failure in acknowledged:
+            print(failure)
+        print("      これは『直った』ではない。**直せないものを、名指しで数え続けている**という表示。")
     parse_errors = by_check.get("parse", [])
     if parse_errors:
         print("FAIL  every ledger line parses as JSON")
