@@ -17,6 +17,7 @@ anywhere. See "Why this cannot write" below.
     python3 sandbox_audit.py --markdown   # paste into a ticket or review
     python3 sandbox_audit.py --share      # same, minus anything about your box
     python3 sandbox_audit.py --json
+    python3 sandbox_audit.py --profile    # a sandbox-profile/1 document — see PROFILES.md
 
 Exit status is 0 whatever it finds. This is a measurement, not a test.
 
@@ -98,8 +99,10 @@ possible, and reading it is the reason to bother.
 """
 
 import argparse
+import datetime
 import json
 import os
+import platform
 import re
 import ssl
 import sys
@@ -107,6 +110,8 @@ import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
+VERSION = "1.1"
+SCHEMA = "sandbox-profile/1"
 UA = "sandbox-audit/1.0 (read-only; +github.com/nemuprojectofficial-glitch/n0-public)"
 TIMEOUT = 20
 
@@ -367,17 +372,94 @@ def render(rows, markdown=False, share=False):
     return "\n".join(L)
 
 
+def profile(rows, label=None, harness=None, notes=None):
+    """A `sandbox-profile/1` document: one run, in a form other runs can be diffed against.
+
+    Deliberately narrower than `--json`. Response bodies and error strings are
+    dropped, because on this very box one of them contains the account name that
+    a host volunteered for a request carrying no credentials. A profile is meant
+    to be posted in public by someone who has not read every byte of it first,
+    so the shape has to be safe before they look, not after.
+
+    What is kept is what a second profile can disagree with: which probe, which
+    verdict, which status, and what the control on that host said.
+    """
+    def keys(v):
+        return sorted(r["key"] for r in rows if r["verdict"] == v)
+
+    return {
+        "schema": SCHEMA,
+        "generated_at": datetime.datetime.now(datetime.timezone.utc)
+                        .replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+        "tool": {
+            "name": "sandbox_audit.py",
+            "version": VERSION,
+            "source": "github.com/nemuprojectofficial-glitch/n0-public",
+        },
+        "box": {
+            # All three are yours to fill in. Nothing here is detected, because
+            # a box cannot reliably name the thing that is confining it.
+            "label": label,
+            "harness": harness,
+            "notes": notes,
+        },
+        "environment": {
+            # Presence and counts only. Never values: a proxy URL can carry a
+            # credential, and NO_PROXY can carry an employer's internal names.
+            "https_proxy": bool(os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")),
+            "no_proxy_entries": len([x for x in (os.environ.get("NO_PROXY")
+                                     or os.environ.get("no_proxy") or "").split(",") if x]),
+            "python": platform.python_version(),
+            "system": platform.system(),
+        },
+        "findings": {
+            "guard_tripped": bool(keys("GUARD")),
+            "publishes_on_read": keys("PUBLISHES-ON-READ"),
+            "credential_injected": keys("CREDENTIAL-INJECTED"),
+            "doors_open": keys("door-open"),
+            "answers_anything": keys("answers-anything"),
+            # Your allowlist refusing, not the host. Kept as its own field because
+            # it is the one class that a reader will otherwise attribute to the
+            # service: two of these arrive as a 403 with a body, which is the same
+            # three digits the service itself would have sent.
+            "blocked_by_box": keys("blocked-by-box"),
+            "no_response": sorted(r["key"] for r in rows if r["status"] is None),
+        },
+        "probes": [
+            {
+                "key": r["key"],
+                "class": r["class"],
+                "url": r["url"],
+                "status": r["status"],
+                "verdict": r["verdict"],
+                "control_status": r["control_status"],
+                "control_body_len": r["control_body_len"],
+                "errored": bool(r["error"]),
+            }
+            for r in rows
+        ],
+    }
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--markdown", action="store_true", help="markdown, for a ticket or a review")
     ap.add_argument("--share", action="store_true",
                     help="markdown with nothing about your environment in it — safe to post")
     ap.add_argument("--json", action="store_true")
+    ap.add_argument("--profile", action="store_true",
+                    help="a sandbox-profile/1 document: no response bodies, safe to post, "
+                         "and diffable against anyone else's — see PROFILES.md")
+    ap.add_argument("--label", help="with --profile: what to call this box, e.g. 'acme-ci'")
+    ap.add_argument("--harness", help="with --profile: what is running the agent, if you know")
+    ap.add_argument("--notes", help="with --profile: anything a reader would need to read it right")
     ap.add_argument("--concurrency", type=int, default=8)
     a = ap.parse_args()
 
     rows = run(a.concurrency)
-    if a.json:
+    if a.profile:
+        print(json.dumps(profile(rows, a.label, a.harness, a.notes), indent=2, sort_keys=False))
+    elif a.json:
         print(json.dumps(rows, indent=2))
     else:
         print(render(rows, markdown=a.markdown or a.share, share=a.share))

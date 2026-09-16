@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/nemuprojectofficial-glitch/n0-public/blob/main/profiles/SCHEMA.json",
+  "title": "sandbox-profile/1",
+  "description": "One run of sandbox_audit.py inside one box, in a shape that another run inside another box can be diffed against. Response bodies and environment values are excluded by construction, so that a profile can be posted in public by someone who has not read every byte of it first.",
+  "type": "object",
+  "required": ["schema", "generated_at", "tool", "box", "environment", "findings", "probes"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {"const": "sandbox-profile/1"},
+    "generated_at": {"type": "string", "format": "date-time"},
+    "tool": {
+      "type": "object",
+      "required": ["name", "version"],
+      "properties": {
+        "name": {"type": "string"},
+        "version": {"type": "string"},
+        "source": {"type": "string"}
+      }
+    },
+    "box": {
+      "type": "object",
+      "description": "Nothing here is detected. A box cannot reliably name the thing confining it, so all three fields are supplied by the person running the tool, and all three may be null.",
+      "properties": {
+        "label": {"type": ["string", "null"], "description": "What to call this box. May be a pseudonym."},
+        "harness": {"type": ["string", "null"], "description": "What is running the agent, if you know."},
+        "notes": {"type": ["string", "null"], "description": "Anything a reader needs in order to read the rest correctly."}
+      }
+    },
+    "environment": {
+      "type": "object",
+      "description": "Presence and counts only, never values. A proxy URL can carry a credential; NO_PROXY can carry an employer's internal hostnames.",
+      "properties": {
+        "https_proxy": {"type": "boolean"},
+        "no_proxy_entries": {"type": "integer"},
+        "python": {"type": "string"},
+        "system": {"type": "string"}
+      }
+    },
+    "findings": {
+      "type": "object",
+      "description": "The classifications, each as a sorted list of probe keys. These are the fields two profiles disagree on.",
+      "properties": {
+        "guard_tripped": {
+          "type": "boolean",
+          "description": "A probe that cannot succeed returned 2xx. If true, the run's reasoning is wrong and the run should be treated as a write that happened."
+        },
+        "publishes_on_read": {
+          "type": "array", "items": {"type": "string"},
+          "description": "Hosts where a GET caused, or would have caused, an entry in a public append-only log that nobody can retract."
+        },
+        "credential_injected": {
+          "type": "array", "items": {"type": "string"},
+          "description": "Authenticated endpoints that answered 2xx to a request carrying no Authorization header."
+        },
+        "doors_open": {
+          "type": "array", "items": {"type": "string"},
+          "description": "Publish endpoints that are reachable and answering 'who are you?'. A credential arriving in the box is the only remaining step."
+        },
+        "answers_anything": {
+          "type": "array", "items": {"type": "string"},
+          "description": "Hosts that returned 200 with a substantial body for a path invented so that it would not exist. A 200 from these hosts is not evidence."
+        },
+        "blocked_by_box": {
+          "type": "array", "items": {"type": "string"},
+          "description": "Refused by the sandbox, not by the service. Kept separate because some of these arrive as a 403 with a body — the same three digits the service itself would have sent, meaning the opposite thing."
+        },
+        "no_response": {
+          "type": "array", "items": {"type": "string"},
+          "description": "No status line at all."
+        }
+      }
+    },
+    "probes": {
+      "type": "array",
+      "description": "Every probe, including the ones that found nothing. A profile with only the interesting rows cannot be diffed against one taken a month later.",
+      "items": {
+        "type": "object",
+        "required": ["key", "class", "url", "status", "verdict"],
+        "additionalProperties": false,
+        "properties": {
+          "key": {"type": "string"},
+          "class": {"type": "string", "enum": ["A", "B", "C"]},
+          "url": {"type": "string"},
+          "status": {"type": ["integer", "null"]},
+          "verdict": {"type": "string"},
+          "control_status": {
+            "type": ["integer", "null"],
+            "description": "What the same host answered for a path invented so it would not exist. Without this, a 200 in the row above cannot be read."
+          },
+          "control_body_len": {"type": ["integer", "null"]},
+          "errored": {"type": "boolean"}
+        }
+      }
+    }
+  }
+}

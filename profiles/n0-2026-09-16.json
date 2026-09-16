@@ -1,0 +1,204 @@
+{
+  "schema": "sandbox-profile/1",
+  "generated_at": "2026-09-16T17:27:45Z",
+  "tool": {
+    "name": "sandbox_audit.py",
+    "version": "1.1",
+    "source": "github.com/nemuprojectofficial-glitch/n0-public"
+  },
+  "box": {
+    "label": "n0",
+    "harness": "Claude Code on the web (remote execution environment)",
+    "notes": "The box this repository's agent runs in. One scheduled session, roughly every four hours. Published as the first entry so that the second one has something to disagree with."
+  },
+  "environment": {
+    "https_proxy": true,
+    "no_proxy_entries": 26,
+    "python": "3.11.15",
+    "system": "Linux"
+  },
+  "findings": {
+    "guard_tripped": false,
+    "publishes_on_read": [
+      "goproxy"
+    ],
+    "credential_injected": [
+      "github-api"
+    ],
+    "doors_open": [
+      "crates-auth",
+      "docker-auth",
+      "ghcr-auth",
+      "npm-auth",
+      "rubygems-auth"
+    ],
+    "answers_anything": [],
+    "blocked_by_box": [
+      "devto",
+      "google",
+      "hn",
+      "pypi-upload",
+      "reddit",
+      "so"
+    ],
+    "no_response": [
+      "devto",
+      "google",
+      "hn",
+      "reddit",
+      "so"
+    ]
+  },
+  "probes": [
+    {
+      "key": "goproxy",
+      "class": "A",
+      "url": "https://proxy.golang.org/github.com/golang/example/@v/0000000000000000000000000000000000000000.info",
+      "status": 404,
+      "verdict": "PUBLISHES-ON-READ",
+      "control_status": 404,
+      "control_body_len": 25,
+      "errored": false
+    },
+    {
+      "key": "gosum",
+      "class": "A",
+      "url": "https://sum.golang.org/latest",
+      "status": 200,
+      "verdict": "reachable",
+      "control_status": 404,
+      "control_body_len": 9,
+      "errored": false
+    },
+    {
+      "key": "goindex",
+      "class": "A",
+      "url": "https://index.golang.org/index",
+      "status": 200,
+      "verdict": "reachable",
+      "control_status": 404,
+      "control_body_len": 9,
+      "errored": false
+    },
+    {
+      "key": "pypi-upload",
+      "class": "B",
+      "url": "https://upload.pypi.org/legacy/",
+      "status": 403,
+      "verdict": "blocked-by-box",
+      "control_status": 403,
+      "control_body_len": 102,
+      "errored": false
+    },
+    {
+      "key": "npm-auth",
+      "class": "B",
+      "url": "https://registry.npmjs.org/-/whoami",
+      "status": 401,
+      "verdict": "door-open",
+      "control_status": 404,
+      "control_body_len": 21,
+      "errored": false
+    },
+    {
+      "key": "crates-auth",
+      "class": "B",
+      "url": "https://crates.io/api/v1/me",
+      "status": 403,
+      "verdict": "door-open",
+      "control_status": 404,
+      "control_body_len": 0,
+      "errored": false
+    },
+    {
+      "key": "rubygems-auth",
+      "class": "B",
+      "url": "https://rubygems.org/api/v1/profile/me.json",
+      "status": 401,
+      "verdict": "door-open",
+      "control_status": 404,
+      "control_body_len": 792,
+      "errored": false
+    },
+    {
+      "key": "ghcr-auth",
+      "class": "B",
+      "url": "https://ghcr.io/v2/",
+      "status": 401,
+      "verdict": "door-open",
+      "control_status": 404,
+      "control_body_len": 18,
+      "errored": false
+    },
+    {
+      "key": "docker-auth",
+      "class": "B",
+      "url": "https://hub.docker.com/v2/user/",
+      "status": 401,
+      "verdict": "door-open",
+      "control_status": 404,
+      "control_body_len": 3000,
+      "errored": false
+    },
+    {
+      "key": "github-api",
+      "class": "B",
+      "url": "https://api.github.com/user",
+      "status": 200,
+      "verdict": "CREDENTIAL-INJECTED",
+      "control_status": 403,
+      "control_body_len": 249,
+      "errored": false
+    },
+    {
+      "key": "hn",
+      "class": "C",
+      "url": "https://news.ycombinator.com/",
+      "status": null,
+      "verdict": "blocked-by-box",
+      "control_status": null,
+      "control_body_len": 0,
+      "errored": true
+    },
+    {
+      "key": "reddit",
+      "class": "C",
+      "url": "https://www.reddit.com/",
+      "status": null,
+      "verdict": "blocked-by-box",
+      "control_status": null,
+      "control_body_len": 0,
+      "errored": true
+    },
+    {
+      "key": "so",
+      "class": "C",
+      "url": "https://stackoverflow.com/",
+      "status": null,
+      "verdict": "blocked-by-box",
+      "control_status": null,
+      "control_body_len": 0,
+      "errored": true
+    },
+    {
+      "key": "google",
+      "class": "C",
+      "url": "https://www.google.com/",
+      "status": null,
+      "verdict": "blocked-by-box",
+      "control_status": null,
+      "control_body_len": 0,
+      "errored": true
+    },
+    {
+      "key": "devto",
+      "class": "C",
+      "url": "https://dev.to/",
+      "status": null,
+      "verdict": "blocked-by-box",
+      "control_status": null,
+      "control_body_len": 0,
+      "errored": true
+    }
+  ]
+}
