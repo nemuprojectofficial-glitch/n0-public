@@ -135,10 +135,36 @@ for hosts matching `$NO_PROXY`, which go direct. So:
 | direct TCP connect succeeds (`NO_PROXY` host) | **reachable** |
 | permitted, but DNS/TCP fails | host does not exist or is down |
 
-**An origin's own 4xx still counts as reachable.** `www.npmjs.com` answers 403
-and `upload.pypi.org` answers 403 — but those refusals came from the service,
-about the request, not from the sandbox, about the destination. Conflating the
-two is the easiest way to draw this map wrong.
+**An origin's own 4xx still counts as reachable.** `www.npmjs.com` answers 403,
+but that refusal came from the service, about the request, not from the sandbox,
+about the destination. Conflating the two is the easiest way to draw this map
+wrong.
+
+> ### Correction, 2026-09-16
+>
+> **The sentence above used to name `upload.pypi.org` alongside `www.npmjs.com`
+> as an example of a service's refusal. That was wrong, and it was wrong on the
+> day it was written.** Re-measured today, `upload.pypi.org` answers:
+>
+> ```
+> HTTP/2 403
+> x-deny-reason: host_not_allowed
+> Host not in allowlist: upload.pypi.org.
+> ```
+>
+> **That 403 is this sandbox's, not PyPI's.** The probe that produced this map
+> read the status line and stopped, so the header was never seen; and the map
+> then used the mislabelled host as its illustration of the very distinction it
+> got wrong. `api.jsr.io` is the same case and was never probed at all.
+>
+> Both hosts are on the `$NO_PROXY` bypass by **suffix** match (`pypi.org`,
+> `jsr.io` are listed; these two are not), so neither is visible to a
+> CONNECT-based probe. `$NO_PROXY` means "skip the proxy", not "unfiltered":
+> there is a second enforcement point on that route with its own, narrower list.
+>
+> `egress_probe.py` now reads the response head and reports these separately as
+> `BLOCKED-BY-BOX`. The reachable lists below are corrected accordingly.
+> Full write-up: [`READ-YES-PUBLISH-NO.md`](READ-YES-PUBLISH-NO.md).
 
 Two controls are built into the probe list: `example.com` (an ordinary host that
 should be blocked if the allowlist is real) and a `.invalid` hostname (which
@@ -154,13 +180,24 @@ permitted, so the allowlist matches **exact hosts, not wildcards**.
 
 ### Reachable — package and container registries
 
-`pypi.org` · `upload.pypi.org` · `test.pypi.org` · `files.pythonhosted.org` ·
-`registry.npmjs.org` · `www.npmjs.com` · `crates.io` · `static.crates.io` ·
-`rubygems.org` · `packagist.org` · `hex.pm` · `api.nuget.org` ·
+`pypi.org` · `test.pypi.org` · `files.pythonhosted.org` ·
+`registry.npmjs.org` · `www.npmjs.com` · `crates.io` · `index.crates.io` ·
+`static.crates.io` ·
+`rubygems.org` · `packagist.org` · `hex.pm` · `api.nuget.org` · `www.nuget.org` ·
 `repo1.maven.org` · `anaconda.org` · `conda.anaconda.org` ·
 `proxy.golang.org` · `pkg.go.dev` · `index.golang.org` · `sum.golang.org` ·
-`jsr.io` ·
+`jsr.io` · `npm.jsr.io` ·
 `ghcr.io` · `index.docker.io` · `registry-1.docker.io` · `hub.docker.com`
+
+### Blocked by the sandbox *after* the connection opened — `BLOCKED-BY-BOX`
+
+`upload.pypi.org` · `api.jsr.io`
+
+**Both are the publish-side hostname of a registry whose read-side hostname is
+permitted, and both were counted as reachable above until 2026-09-16.** They are
+not refused at the CONNECT proxy; they are refused at a second enforcement point
+on the `$NO_PROXY` route, which answers `403` with `x-deny-reason:
+host_not_allowed`. See [`READ-YES-PUBLISH-NO.md`](READ-YES-PUBLISH-NO.md).
 
 ### Reachable — code hosts and OS repositories
 

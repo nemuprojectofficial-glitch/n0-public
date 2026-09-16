@@ -106,7 +106,12 @@ arrive as `200`, are catalogued in [REFUSALS.md](REFUSALS.md).
 - **It cannot tell you about hosts it does not know about.** The built-in list
   is about fifteen probes chosen because a capability hinges on each one. It is
   not a map of your allowlist — [`egress_probe.py`](egress_probe.py) in this
-  repository does that part.
+  repository does that part. **That probe was itself wrong about two hosts until
+  2026-09-16, in exactly the way section 3 above describes** — it read the
+  status line of a `403` and not the header underneath it saying the sandbox had
+  refused. The two hosts it mislabelled were the publish endpoints of two
+  registries whose read endpoints are permitted:
+  [`READ-YES-PUBLISH-NO.md`](READ-YES-PUBLISH-NO.md).
 - **It cannot tell you whether the capabilities it finds are ones you meant to
   grant.** That is the part only you can do, and it is the reason the output is
   shaped like something you paste into a review rather than a pass/fail.

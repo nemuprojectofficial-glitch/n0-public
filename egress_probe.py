@@ -18,18 +18,34 @@ Traffic leaves through an HTTP CONNECT proxy named by $HTTPS_PROXY, except for
 hosts matching $NO_PROXY, which go direct. So there are two probes:
 
   proxied host   send `CONNECT host:443` to the proxy and read its status line
-                 200  -> the allowlist permits this host (tunnel opened)
+                 200  -> the tunnel opened
                  403  -> the allowlist does not permit this host
   direct host    open a TCP connection to host:443
 
-Then, for hosts that got through, optionally complete a TLS handshake and send
-`HEAD /` to see whether the origin answers. An origin's own 403 (npm, PyPI's
-upload endpoint) still means REACHABLE — the refusal came from the service, not
-from the sandbox.
+Then complete a TLS handshake, send `HEAD /`, and read the *response head* — not
+only its first line. An origin's own 403 still means REACHABLE: that refusal came
+from the service, about the request. But an interception proxy can answer with
+the same three digits about the destination, and it says so in a header
+(`x-deny-reason: host_not_allowed`) or in the body.
 
-  REACHABLE  the sandbox let the connection out and something answered
-  BLOCKED    the proxy refused the tunnel
-  NO_HOST    permitted, but DNS or TCP failed (host does not exist / is down)
+  REACHABLE       the sandbox let the request out and the service answered
+  BLOCKED         the proxy refused the tunnel
+  BLOCKED-BY-BOX  the connection opened, then the sandbox refused the request
+  NO_HOST         permitted, but DNS or TCP failed (host missing / down)
+
+Two things this file got wrong for ten days. Both are fixed; both are worth
+knowing before you write your own probe, because neither is obvious and both
+fail in the same direction — they make the reachable list look longer than it is.
+
+  1. It read the status line and stopped. `upload.pypi.org` answered 403 with
+     `x-deny-reason: host_not_allowed` in the head, and this probe filed it as
+     REACHABLE. The map built on that output then cited that exact host as its
+     example of *a service's* refusal.
+  2. It treated `$NO_PROXY` as meaning *unfiltered*. It does not. It means
+     "skip the CONNECT proxy". In this sandbox `pypi.org` and `upload.pypi.org`
+     both take that route — by suffix match, not because either is listed — and
+     one answers while the other is refused. A probe that inspects only the
+     CONNECT status line cannot see either host at all.
 
 Usage
 -----
@@ -147,8 +163,44 @@ def open_tunnel(proxy, host, port=443):
         raise
 
 
-def origin_status(sock, host):
-    """Complete TLS and send HEAD /. Returns the origin's status code, or None."""
+# Signals that *the sandbox* refused, not the service. A sandbox's 403 and a
+# registry's 403 are the same three digits and mean opposite things; the status
+# line alone cannot tell them apart, so this probe reads the response head.
+#
+# Session 73 found the cost of not doing that: this file reported
+# `upload.pypi.org` as REACHABLE for ten days, on a response whose header said
+# `x-deny-reason: host_not_allowed`. The document built on it then named that
+# host as an example of *a service's* refusal. One unread header, one wrong
+# sentence in the most-cited paragraph of the map.
+DENY_HEADERS = ("x-deny-reason",)
+DENY_TEXT = (
+    "host not in allowlist",
+    "not permitted through this proxy",
+    "add this host to your network egress settings",
+    "tunnel connection failed",
+)
+
+
+def refused_by_box(head):
+    low = (head or "").lower()
+    return any(h in low for h in DENY_HEADERS) or any(t in low for t in DENY_TEXT)
+
+
+def deny_reason(head):
+    for line in (head or "").split("\r\n"):
+        name, _, value = line.partition(":")
+        if name.strip().lower() in DENY_HEADERS:
+            return value.strip()
+    return None
+
+
+def origin_head(sock, host):
+    """Complete TLS and send HEAD /. Returns (status, response head text).
+
+    The head, not just the status line: an interception proxy announces itself
+    there, and that announcement is the only thing separating "this host is not
+    allowed" from "this host is allowed and wants a token".
+    """
     ctx = ssl.create_default_context()
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE  # we are measuring reachability, not trust
@@ -158,10 +210,18 @@ def origin_status(sock, host):
            "User-Agent: egress-probe (read-only reachability check)\r\n"
            "Connection: close\r\n\r\n").format(h=host)
     tls.sendall(req.encode())
-    line = tls.recv(256).decode("latin-1", "replace").split("\r\n")[0]
+    head = b""
+    while b"\r\n\r\n" not in head and len(head) < 4096:
+        chunk = tls.recv(1024)
+        if not chunk:
+            break
+        head += chunk
     tls.close()
+    text = head.decode("latin-1", "replace")
+    line = text.split("\r\n")[0]
     parts = line.split()
-    return int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else None
+    status = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else None
+    return status, text
 
 
 def probe(host, proxy, patterns):
@@ -187,9 +247,21 @@ def probe(host, proxy, patterns):
                 row["detail"] = "proxy refused CONNECT with %d" % status
                 return row
         try:
-            row["origin_status"] = origin_status(sock, host)
+            row["origin_status"], head = origin_head(sock, host)
         except Exception as exc:
             row["detail"] = "connected, TLS/HTTP failed: %s" % type(exc).__name__
+            row["verdict"] = "REACHABLE"
+            return row
+        # A connection that opened is not a host that answered. $NO_PROXY means
+        # "skip the CONNECT proxy" — it does not mean "unfiltered": traffic on
+        # that route can still meet an interception proxy that keeps its own,
+        # narrower list. Measured here: `pypi.org` answers and `upload.pypi.org`
+        # is refused, and both take the direct route by suffix match.
+        if refused_by_box(head):
+            row["verdict"] = "BLOCKED-BY-BOX"
+            row["detail"] = ("connection opened, request refused by the sandbox "
+                             "(%s)" % (deny_reason(head) or "allowlist"))
+            return row
         row["verdict"] = "REACHABLE"
         return row
     except socket.gaierror:
@@ -228,19 +300,26 @@ def main():
 
     print("proxy: %s" % (":".join(map(str, proxy)) if proxy else "(none set)"))
     print("%d hosts probed\n" % len(rows))
-    order = {"REACHABLE": 0, "NO_HOST": 1, "BLOCKED": 2}
-    for r in sorted(rows, key=lambda r: (order.get(r["verdict"], 3), r["host"])):
+    order = {"REACHABLE": 0, "NO_HOST": 1, "BLOCKED-BY-BOX": 2, "BLOCKED": 3}
+    for r in sorted(rows, key=lambda r: (order.get(r["verdict"], 4), r["host"])):
         origin = r["origin_status"]
-        note = "origin %s" % origin if origin else r["detail"]
-        print("%-10s %-6s %-38s %s" % (r["verdict"], r["route"], r["host"], note))
+        note = r["detail"] if r["detail"] else ("origin %s" % origin if origin else "")
+        print("%-15s %-6s %-38s %s" % (r["verdict"], r["route"], r["host"], note))
 
-    reach = sum(1 for r in rows if r["verdict"] == "REACHABLE")
-    print("\nREACHABLE %d / BLOCKED %d / NO_HOST %d"
-          % (reach,
-             sum(1 for r in rows if r["verdict"] == "BLOCKED"),
-             sum(1 for r in rows if r["verdict"] == "NO_HOST")))
-    print("\nAn origin's own 4xx still counts as REACHABLE: the refusal came "
-          "from the service, not from the sandbox.")
+    counts = {}
+    for r in rows:
+        counts[r["verdict"]] = counts.get(r["verdict"], 0) + 1
+    print("\n" + " / ".join("%s %d" % (k, counts[k]) for k in sorted(counts)))
+    print("\nAn origin's own 4xx still counts as REACHABLE: that refusal came "
+          "from the service, about the request.")
+    print("BLOCKED-BY-BOX is the opposite case wearing the same status code: "
+          "the connection opened and the sandbox refused the request anyway. "
+          "It is reported separately because reading it as the service's answer "
+          "puts a host on your reachable list that your agent cannot use.")
+    if counts.get("BLOCKED-BY-BOX"):
+        print("\nNote which route those are on. $NO_PROXY means 'skip the "
+              "CONNECT proxy', not 'unfiltered' — a host can bypass the proxy "
+              "by suffix match and still be off the interceptor's list.")
     return 0
 
 
