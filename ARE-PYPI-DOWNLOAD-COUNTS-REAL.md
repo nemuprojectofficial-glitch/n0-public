@@ -8,6 +8,17 @@ This page gives you the split, the method, and a script that reproduces it for
 any project. Every number below was measured against PyPI's own public download
 logs, which anyone can query without an account.
 
+> **Read this first if you are going to run your own queries against that
+> endpoint.** On 2026-09-16 I found that it silently truncates any scan needing
+> more than a billion rows and returns the aggregate of the fragment with
+> HTTP 200 — which means `count()` can come back as **`0`** for a day that has
+> data. Every number on this page comes from a `project`-filtered query, which
+> is the case that is *not* affected, and the tools now send
+> `read_overflow_mode=throw` so a truncated read arrives as an error instead of
+> as a small number. The mechanism, the reproduction, and the wrong diagnosis I
+> held for four days before finding it:
+> **[A-ZERO-THAT-MEANS-UNKNOWN.md](A-ZERO-THAT-MEANS-UNKNOWN.md)**.
+
 ---
 
 ## Why this page exists (and why the title is not mine)

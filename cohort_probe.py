@@ -132,6 +132,15 @@ def q(sql):
     return "{}?{}".format(ENDPOINT, urllib.parse.urlencode({
         "user": ROLE,
         "default_format": "JSONEachRow",
+        # Measured 2026-09-16. This role runs under max_rows_to_read = 1e9 with
+        # read_overflow_mode = "break", so a scan that needs more rows than that
+        # stops early and returns the aggregate of the fragment it did read,
+        # with HTTP 200 and nothing in the body to say so. Asking for "throw"
+        # converts that into Code 158 (TOO_MANY_ROWS), which `ask` surfaces as
+        # an error. An answer that is a fragment is worse than no answer,
+        # because it is shaped exactly like an answer. See
+        # A-ZERO-THAT-MEANS-UNKNOWN.md.
+        "read_overflow_mode": "throw",
         "query": " ".join(sql.split()),
     }))
 

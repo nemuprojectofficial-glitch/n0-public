@@ -41,8 +41,8 @@ credential of anyone's.
 
 ★ The control, and why it is not optional
 -----------------------------------------
-The endpoint caps query execution time and, on overflow, **returns the partial
-result with HTTP 200 and no warning**. Measured 2026-09-12:
+The endpoint **returns the partial result of a truncated scan with HTTP 200 and
+no warning**. Measured 2026-09-12:
 
     SELECT max(date) FROM pypi.pypi_downloads_per_day_by_version_by_installer_by_type
         -> "2026-09-01"                        (whole table: wrong, silently)
@@ -52,6 +52,22 @@ result with HTTP 200 and no warning**. Measured 2026-09-12:
 
 Ten days of data existed and the unfiltered aggregate denied it, successfully.
 An instrument that cannot say "I don't know" will say something else instead.
+
+★ Correction, 2026-09-16: this header used to say the cap was on execution
+time. It is not. Asking the server directly:
+
+    max_execution_time   60          <- never reached; these die in ~1.3 s
+    max_rows_to_read     1000000000
+    read_overflow_mode   break       <- this one
+
+The table holds 11,028,536,818 rows, so any scan it cannot answer from the
+primary index stops at one billion and returns what it has. Adding
+`timeout_overflow_mode=throw` therefore changed nothing, which is how the
+mistake was found; `read_overflow_mode=throw` is the parameter that matters,
+and it is now sent on every request this tool makes. The sorting key is
+`project, version, date, installer`, so a predicate on `project` is an index
+seek and a predicate on `date` alone is a full scan of eleven billion rows.
+Full write-up and reproduction: A-ZERO-THAT-MEANS-UNKNOWN.md.
 
 So this tool never reports a number on its own. Every run first asks a
 *reference* project — one downloaded tens of millions of times a day, so a
@@ -170,6 +186,11 @@ def q(sql):
     return "{}?{}".format(ENDPOINT, urllib.parse.urlencode({
         "user": ROLE,
         "default_format": "JSONEachRow",
+        # See the header: the limit that truncates here is on rows read, not on
+        # seconds, and the default overflow mode is "break" — return the
+        # fragment, HTTP 200, no warning. "throw" turns that into Code 158,
+        # which `ask` returns as an error and the control turns into UNRELIABLE.
+        "read_overflow_mode": "throw",
         "query": sql,
     }))
 
@@ -245,12 +266,29 @@ def freshness(fetch=ask):
         "why": "",
         "note": "",
     }
-    if whole_day and ref_day and whole_day != ref_day:
+    # Since 2026-09-16 every request carries read_overflow_mode=throw, so the
+    # unfiltered scan — which is deliberately a query this endpoint cannot
+    # complete — now comes back as Code 158 instead of as a quiet wrong date.
+    # That is the *healthy* outcome and must not be filed under "errors", or the
+    # tool would report a fault every run for doing exactly what it intended.
+    if err2 and ("TOO_MANY_ROWS" in err2 or "Code: 158" in err2):
+        out["errors"] = [e for e in (err1,) if e]
+        out["note"] = (
+            "the unfiltered scan of the same table refused to answer "
+            "(TOO_MANY_ROWS), which is correct: it would have had to read more "
+            "than max_rows_to_read (1e9) of this table's 1.1e10 rows. Before "
+            "read_overflow_mode=throw was sent, that same query returned the "
+            "aggregate of the first billion rows with HTTP 200 and no warning. "
+            "Filtered reads on the sorting key (project) are complete and are "
+            "what every number below comes from. See A-ZERO-THAT-MEANS-UNKNOWN.md.")
+    elif whole_day and ref_day and whole_day != ref_day:
         out["note"] = (
             "the unfiltered scan of the same table says its newest day is {}, "
-            "while asking about one project says {}. This endpoint returns the "
-            "partial result of a timed-out scan with HTTP 200 and no warning, so "
-            "whole-table aggregates here are not usable. Filtered reads are."
+            "while asking about one project says {}. This endpoint stops a scan "
+            "at max_rows_to_read (1e9) and, with read_overflow_mode=break, "
+            "returns the aggregate of the fragment with HTTP 200 and no warning, "
+            "so whole-table aggregates here are not usable. Filtered reads on "
+            "the sorting key (project) are. See A-ZERO-THAT-MEANS-UNKNOWN.md."
             .format(whole_day, ref_day))
     if err1 or ref_day is None:
         out["why"] = ("{} returned nothing. Either the endpoint is not answering "
@@ -376,7 +414,22 @@ def selftest():
         return [{"d": "2026-09-01"}], None
     f = freshness(fetch=live_shape)
     check("the endpoint's known self-disagreement is noted, not failed",
-          f["reliable"] is True and "partial result of a timed-out scan" in f["note"])
+          f["reliable"] is True and "max_rows_to_read" in f["note"])
+
+    # 4b. With read_overflow_mode=throw the unfiltered scan now *refuses*. That
+    #     is the intended behaviour, so it must not be reported as a fault, and
+    #     it must not drag the run to unreliable. Added 2026-09-16 together with
+    #     the parameter, because the same shape passed the old check by
+    #     accident: an error there simply left `note` empty and nobody looked.
+    def refuses_whole_scan(sql, timeout=30):
+        if "WHERE project" in sql:
+            return [{"d": "2026-09-11", "c": "42483582"}], None
+        return [], ("HTTPError 500: Code: 158. DB::Exception: Limit for rows or "
+                    "bytes to read exceeded, max rows: 1.00 billion, current "
+                    "rows: 9.03 billion (TOO_MANY_ROWS)")
+    f = freshness(fetch=refuses_whole_scan)
+    check("a refused whole-table scan is the healthy case, not an error",
+          f["reliable"] is True and f["errors"] == [] and "TOO_MANY_ROWS" in f["note"])
 
     # 5. A reference that comes back small is what a partial read looks like,
     #    and it must fail — this is the check that can actually say no.
