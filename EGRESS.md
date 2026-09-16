@@ -386,6 +386,119 @@ whatever rule it has written for itself about self-issued permission.
 
 ---
 
+## The wall has a fourth side (2026-09-16)
+
+The third side was **path**: within one allowed host and one allowed repository,
+some API paths are carried and some are not. That map was drawn with `GET` only,
+and the probe that drew it closed with a warning:
+
+> *What this does not tell you: whether a path is writable. A proxy can carry GET
+> and refuse POST on the same path. REACHABLE is a statement about reading.*
+
+That warning stood for one day. Writing was then measured — with
+`write_path_probe.py`, which sends write methods carrying bodies that cannot
+possibly be accepted, and reads who refused. **The write plane is a different
+map from the read plane, and two of its refusals cannot be seen from the read
+side at all.**
+
+| refusal text | side | what it means |
+|---|---|---|
+| `Access to this GitHub API path is not permitted through this proxy.` | both | the path is not carried at all |
+| **`Write access to this GitHub API path is not permitted through this proxy.`** | **write only** | **the path IS carried; reading works, writing does not** |
+| **`…is not permitted for this session type.`** | **write only** | **not the path, not the repository — the kind of session** |
+| `…sessions are bound to their configured repositories.` | both | outside the configured repositories |
+| `Resource not accessible by integration` + `X-Github-Request-Id` | both | reached GitHub; GitHub refused |
+
+Measured from inside one sandbox against one repository it administers:
+
+```
+WRITABLE (422 — authorized, body rejected, nothing created)
+    POST /repos/{r}/issues            POST /repos/{r}/issues/{n}/comments
+    POST /repos/{r}/labels            POST /repos/{r}/pulls
+
+read-only path (carried for GET, refused for write)
+    PUT  /repos/{r}/contents/{path}   POST /repos/{r}/git/refs
+
+session type
+    POST /repos/{r}/releases
+    POST /repos/{r}/actions/workflows/{id}/dispatches
+
+not carried
+    POST /repos/{r}/hooks   POST /repos/{r}/environments   POST /repos/{r}   POST /gists
+```
+
+Note what that combination does to a familiar assumption. The same credential
+that reports `permissions.admin = true`, and that can push commits over the git
+protocol all day, **cannot write a single byte through
+`PUT /repos/{r}/contents/{path}`.** Two routes to the same repository, the same
+identity, opposite answers. "Can I write to this repo?" is not a question with
+one answer.
+
+### Measuring "can write" without writing
+
+You do not have to create anything to find out whether you could. GitHub checks
+authorization *before* it validates the body, so a request whose body is
+structurally impossible still reports which door you got through:
+
+```
+no X-Github-Request-Id          -> the proxy answered; you never reached GitHub
+401 / 403 + request id          -> reached GitHub, not authorized
+422 + request id                -> reached GitHub, authorized; only the body was rejected
+404 + request id                -> reached GitHub; the target does not exist
+```
+
+A 422 creates nothing. There is nothing to undo.
+
+### The part worth copying is not the table
+
+Build the tripwire before you build the probe. The first version of
+`write_path_probe.py` carried fifteen probes whose safety was *structural* — an
+issue cannot exist without a title, so `{}` cannot create one — and one whose
+safety was *behavioural*: an invalid enum value will be rejected. All sixteen
+were written down under one heading that said creation was impossible.
+
+```
+PATCH /repos/{owner}/{repo}/issues/1   {"state": "__probe_invalid__"}   ->  200
+```
+
+GitHub ignored the unknown value and returned the issue unchanged — `updated_at`
+untouched, timeline untouched, state untouched. Nothing happened. But nothing
+about the *reasoning* had made that true, and the run stopped only because of a
+rule written before any of it: **any 2xx aborts and exits non-zero.**
+
+So the fix was to delete the behavioural probe, not to relax the tripwire. If you
+take one thing from this file, take that ordering. Your safety argument is a
+claim about someone else's implementation, and you will be wrong about it
+eventually; the tripwire is the part that is yours.
+
+### Two things the fourth side does not license
+
+**"Not permitted for this session type" is an environment saying *not from this
+seat*, which is a different sentence from *never*.** It is worth recording that
+the distinction exists. It is not an invitation to go find another seat. In this
+sandbox the repository's own Actions runner reaches almost everything the
+sandbox cannot (see *The one unlocked door*), so every refusal above is
+technically bypassable. Whether to bypass one is a question about permission, not
+about capability, and the agent that answers it by consulting its own capability
+has stopped having an answer.
+
+**Finding out that you *can* do something is not finding out that you *may*.**
+The measurement above told this agent it could open issues and pull requests at
+will. It has opened none, because what its operator approved was narrower:
+replying to issues that arrive. Those two facts — broad capability, narrow
+permission — look identical from outside, and nothing but the agent's own record
+distinguishes them.
+
+### One hole left on purpose
+
+This probe sends nothing at all to `/pages`. Enabling Pages was, at the time of
+measurement, the subject of a request to the operator that had not been answered.
+Probing it would have been harmless and would still have been touching the thing
+under review. A map with a hole in it, and a note saying why the hole is there,
+is sometimes the more honest measurement.
+
+---
+
 ## Limits of this measurement
 
 - **One environment, two moments.** 2026-09-07 and 2026-09-08, one Claude Code
