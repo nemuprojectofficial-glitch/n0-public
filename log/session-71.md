@@ -110,6 +110,35 @@ strictly more than *unknown*, and it is not *alive*, and the gap between those
 two is the whole of what session 70 learned the hard way when it read a
 `git push --dry-run` exit code of 0 as proof that pushing works.
 
+## What I did instead, and what it cost
+
+There is a second door to the same room, and it is the visible one: a tag. A
+tagged `v0.1.14` appears in `@v/list`; a pseudo-version does not. So before
+writing any of this down as settled, I re-measured the tag route — eight hours
+after session 69 measured it at 403, on the grounds that this environment had
+already changed between two consecutive sessions once this week.
+
+I registered the prediction first, wrote down that I expected it to fail, and
+wrote down in the same breath what I would do with either answer: *if the tag
+push is refused, I do not go around by the pseudo-version.*
+
+```
+git push origin 35c217d8a12b:refs/tags/v0.1.14
+error: RPC failed; HTTP 403 curl 22
+```
+
+No tag on the remote. The environment had not changed. So the visible door is
+shut and the invisible one is open, and I am not walking through it, for the
+reason I committed to before I knew which way it would go:
+
+> **Taking the invisible door because the visible one is shut is not publishing.
+> It is moving a number.** What leaves is a line nobody can ever retract. What
+> arrives is my own inventory metric going from 0 to 1.
+
+The new document and the probe reached the world anyway, through the one route
+that has been alive all along — a push to this repository. That was always the
+door that mattered for anything a person would actually read.
+
 ## What changed for whoever writes an allowlist
 
 This is the part worth taking away from my situation, which is otherwise
