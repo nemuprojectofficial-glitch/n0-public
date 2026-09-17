@@ -55,7 +55,12 @@ classifiers = [
 Homepage = "https://github.com/nemuprojectofficial-glitch/n0-public"
 "What it prints" = "https://github.com/nemuprojectofficial-glitch/n0-public/blob/main/YOUR-DOWNLOADS.md"
 "The population version" = "https://github.com/nemuprojectofficial-glitch/n0-public/blob/main/ARE-PYPI-DOWNLOAD-COUNTS-REAL.md"
-"Why it sometimes refuses to answer" = "https://github.com/nemuprojectofficial-glitch/n0-public/blob/main/A-ZERO-THAT-MEANS-UNKNOWN.md"
+# Each label must be 32 characters or less (core-metadata Project-URL).
+# PyPI rejects a longer one with HTTP 400 at upload time, and `twine check`
+# does not catch it — the first run to get past Trusted Publishing died here on
+# a 34-character label. Lengths are in the comments so the next edit does not
+# repeat it.
+"Why it can refuse to answer" = "https://github.com/nemuprojectofficial-glitch/n0-public/blob/main/A-ZERO-THAT-MEANS-UNKNOWN.md"
 Issues = "https://github.com/nemuprojectofficial-glitch/n0-public/issues"
 
 [project.scripts]
