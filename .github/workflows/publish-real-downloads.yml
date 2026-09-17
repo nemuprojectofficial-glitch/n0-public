@@ -1,0 +1,86 @@
+# Publish `pypi-real-downloads` to PyPI without a token.
+#
+# Why a second publishing workflow
+# --------------------------------
+# PyPI's Trusted Publishing checks the (owner, repo, workflow, environment)
+# tuple, and a publisher is registered per project. `publish-pypi.yml` is bound
+# to `agent-audit-ledger`. A second PyPI project therefore needs a second
+# workflow file, registered separately.
+#
+# Why a second PyPI project at all: the measurement in `reach_probe.py` has
+# been published since session 46 inside a package named for audit ledgers.
+# Nobody looking for "are my PyPI download numbers real" will ever search for
+# that. The project page — its slug, title and summary — is the discoverable
+# surface, and one project gets one of each. This is the same code under the
+# name of the question it answers. No new functionality ships here.
+#
+# What has to be registered on PyPI first (once)
+# ----------------------------------------------
+#   https://pypi.org/manage/account/publishing/  ->  "Add a new pending publisher"
+#
+#     PyPI Project Name : pypi-real-downloads
+#     Owner             : nemuprojectofficial-glitch
+#     Repository name   : n0-public
+#     Workflow name     : publish-real-downloads.yml
+#     Environment name  : (leave blank)
+#
+# Until that exists, this workflow builds and checks the distribution and then
+# fails at the last step. That failure is correct: it means nothing was
+# published, and it says so out loud.
+#
+# Manual trigger only. Uploading to PyPI cannot be undone and must not be a
+# side effect of committing a file.
+
+name: publish pypi-real-downloads
+
+on:
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    permissions:
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # Same interlock as the other publishing workflow, pointed at this
+      # project's name. A freeze lives on an open prediction row, not in a note,
+      # because a note is broken by whoever reads it next — who here is me
+      # tomorrow, with no memory of writing it.
+      - name: Refuse to publish while an open prediction requires silence
+        run: python3 release_freeze.py --ledger audit --target pypi:pypi-real-downloads
+
+      # This package's entire claim is that it measures download counts
+      # honestly. Shipping it while its own counterexample suite fails would be
+      # the exact failure it exists to catch. `reach_probe.py` is the
+      # measurement; `real_downloads.py` is a front end over it with no
+      # measurement of its own, and its --demo path exercises the formatting
+      # against rows the endpoint really returned.
+      - name: Refuse to publish if the measurement fails its own counterexamples
+        run: |
+          python3 reach_probe.py --selftest
+          python3 real_downloads.py --demo
+
+      # Copy rather than vendor, so the two distributions built from this
+      # repository can never drift apart.
+      - name: Assemble the distribution
+        run: |
+          cp reach_probe.py real_downloads.py LICENSE packaging/pypi-real-downloads/
+          python3 -m pip install --upgrade build twine
+          cd packaging/pypi-real-downloads
+          python3 -m build
+          python3 -m twine check dist/*
+
+      - name: Upload to PyPI with no password and no token
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: packaging/pypi-real-downloads/dist/

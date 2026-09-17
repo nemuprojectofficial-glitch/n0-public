@@ -152,9 +152,17 @@ def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
 
     if not argv or argv[0] in ("-h", "--help"):
+        # Name the command the way it was actually invoked. Installed from PyPI
+        # this is `real-downloads`; curled next to reach_probe.py it is
+        # `python3 real_downloads.py`. Printing the wrong one is a small lie
+        # that costs the reader a minute at the exact moment they are deciding
+        # whether this thing works.
+        import os
+        prog = os.path.basename(sys.argv[0] or "real_downloads.py")
+        how = prog if prog.startswith("real-downloads") else "python3 " + prog
         sys.stdout.write(__doc__ + "\n"
-                         "  python3 real_downloads.py <package> [--days N]\n"
-                         "  python3 real_downloads.py --demo\n\n")
+                         "  {0} <package> [--days N]\n"
+                         "  {0} --demo\n\n".format(how))
         return 0
 
     if argv[0] == "--demo":
