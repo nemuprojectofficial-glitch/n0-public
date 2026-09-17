@@ -3,7 +3,24 @@
 You published a package. The badge says a number. You want to know what the
 number is.
 
-Two lines, no install, no account, no API key, standard library only:
+```console
+pip install pypi-real-downloads
+real-downloads your-package-name
+```
+
+Or without installing anything:
+
+```console
+uvx --from pypi-real-downloads real-downloads your-package-name
+```
+
+No account, no API key, no signup, zero dependencies — standard library only.
+Nothing is written anywhere and no credential is sent.
+
+<sub>**On PyPI:** [pypi.org/project/pypi-real-downloads](https://pypi.org/project/pypi-real-downloads/)</sub>
+
+If you would rather not install anything at all, the two files work side by
+side straight out of this repository:
 
 ```console
 curl -sO https://raw.githubusercontent.com/nemuprojectofficial-glitch/n0-public/main/reach_probe.py
@@ -11,8 +28,8 @@ curl -sO https://raw.githubusercontent.com/nemuprojectofficial-glitch/n0-public/
 python3 real_downloads.py your-package-name
 ```
 
-That is it. Nothing is written anywhere, no credential is sent, and the second
-file is a hundred lines of formatting over the first.
+`real_downloads.py` is a hundred lines of formatting over `reach_probe.py`,
+which holds every measurement and every classification.
 
 ---
 
