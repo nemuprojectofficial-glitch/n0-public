@@ -128,6 +128,36 @@ silence into an error, is in
 
 ---
 
+## The other silent zero: your package's name is not its name
+
+The download log is keyed on the **PEP 503 normalized** name — lowercase, with
+every run of `-`, `_` and `.` collapsed to a single `-`. The name PyPI *shows*
+you, on your own project page, is not that. Asked over the same window, from
+the same endpoint, in the same minute on 2026-09-18:
+
+| asked for | rows | downloads |
+|---|---:|---:|
+| `Django` | 0 | **0** |
+| `django` | 48,344 | **23,925,705** |
+| `scikit_learn` | 0 | **0** |
+| `scikit-learn` | 10,518 | **107,528,449** |
+
+HTTP 200 every time. No error, no warning, no hint — just zero.
+
+**This tool had that bug until 2026-09-18.** It passed whatever you typed
+straight into the query, so a Django maintainer typing `Django` got a confident
+zero and a sentence explaining that PyPI's log had no rows for them yet. That is
+the exact failure the section above exists to refuse, rebuilt one function
+lower. It survived because every name this project had ever tested on was
+already lowercase with a hyphen.
+
+It now normalizes first and prints the name it actually asked about whenever
+that differs from what you typed, so the substitution is never silent. **If you
+query the dataset yourself, normalize first** — `re.sub(r"[-_.]+", "-",
+name).lower()` — or you will get the same zero, and nothing will tell you.
+
+---
+
 ## Two things it will not do
 
 **It will not tell you the number is fine.** There is no grade, no score, no

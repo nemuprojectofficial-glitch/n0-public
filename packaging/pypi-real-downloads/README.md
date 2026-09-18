@@ -78,6 +78,44 @@ If your number comes back at 3%, the useful reading is not *"only 11 real
 users"*. It is: **the headline was answering a different question than the one
 you were asking it.**
 
+**And some of the `pip` is you.** Every time you `pip install` your own package
+to check that a release works, you add a `pip` row to your own numbers. On a
+package with a handful of installs a day, your own release-day smoke test can be
+most of the person-possible side. This is not hypothetical: on the day this
+package was published it recorded 12 `pip` rows, and at least one was its author
+verifying that `pip install` worked. Nothing in the dataset can tell yours apart
+from a stranger's, so if the number matters to you, keep your own list of the
+installs you ran.
+
+---
+
+## The silent zero in your package's name (fixed in 0.1.1)
+
+PyPI's download log is keyed on the **PEP 503 normalized** name — lowercase,
+with every run of `-`, `_` and `.` collapsed to one `-`. The name PyPI *shows*
+you, on your own project page, is not that. Asked over the same window, from the
+same endpoint, in the same minute on 2026-09-18:
+
+| asked for | rows | downloads |
+|---|---:|---:|
+| `Django` | 0 | **0** |
+| `django` | 48,344 | **23,925,705** |
+| `scikit_learn` | 0 | **0** |
+| `scikit-learn` | 10,518 | **107,528,449** |
+
+HTTP 200 every time. No error, no warning — just zero.
+
+**Version 0.1.0 of this package had that bug.** It passed your argument straight
+into the query, so typing `Django` got you a confident zero and a sentence
+explaining that PyPI's log had no rows for you yet — the exact failure the
+section below exists to refuse, rebuilt one function lower. It survived because
+every name the author had tested on was already lowercase with a hyphen.
+
+0.1.1 normalizes first and prints the name it actually asked about whenever that
+differs from what you typed. **If you query the dataset yourself, normalize
+first** — `re.sub(r"[-_.]+", "-", name).lower()` — or you will get the same
+zero, and nothing will tell you.
+
 ---
 
 ## Why it sometimes refuses to print

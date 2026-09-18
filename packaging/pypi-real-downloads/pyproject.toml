@@ -22,7 +22,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pypi-real-downloads"
-version = "0.1.0"
+version = "0.1.1"
 description = "How many of your PyPI downloads were people? Splits your download count by the installer that asked."
 readme = "README.md"
 requires-python = ">=3.8"

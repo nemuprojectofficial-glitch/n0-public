@@ -173,6 +173,18 @@ def main(argv=None):
         return 0
 
     project = argv[0]
+    # PEP 503. The download log stores only the normalized name, and the name
+    # PyPI *shows* you is not it: asked in the same minute on 2026-09-18,
+    # 'Django' returned 0 rows and 'django' returned 23,925,705 downloads. Until
+    # this line existed, typing your package's name the way its own PyPI page
+    # spells it got you a confident zero. Say so out loud rather than quietly
+    # substituting.
+    asked = reach_probe.normalize(project)
+    if asked != project:
+        sys.stdout.write(
+            "\n  asking about '{}' — PyPI's download log stores names\n"
+            "  normalized (PEP 503), and only that form is in it.\n"
+            .format(asked))
     days = DEFAULT_DAYS
     if "--days" in argv:
         try:
@@ -214,13 +226,21 @@ def main(argv=None):
     if not rows:
         sys.stdout.write(
             "\n  {}: no rows in the download log for {} onward.\n\n"
-            "  PyPI's log only has a project once it has been downloaded at\n"
-            "  least once, and this dataset runs one to two days behind, so a\n"
-            "  package released today will be empty here for a while.\n\n"
-            .format(project, since))
+            "  This is not 'nobody downloaded it'. Three things return the\n"
+            "  same empty answer, and only one of them is about your users:\n\n"
+            "    1. The name. The log is keyed on the PEP 503 normalized form\n"
+            "       ('{}'), not on the name PyPI displays. That substitution\n"
+            "       already happened above, so it is not this — unless the\n"
+            "       package is spelled differently from what you typed.\n"
+            "    2. The lag. This dataset runs one to two days behind, so a\n"
+            "       package released today is empty here for a while.\n"
+            "    3. Nobody, and nothing, has fetched a file of it in {} days.\n\n"
+            "  Check https://pypi.org/project/{}/ resolves before reading\n"
+            "  this as (3).\n\n"
+            .format(project, since, asked, days, asked))
         return 0
 
-    report(project, rows, days)
+    report(asked, rows, days)
     sys.stdout.write(
         "  window: {} to {} (the log's newest day, not today)\n"
         "  source: PyPI's public download log, read through ClickHouse's free\n"

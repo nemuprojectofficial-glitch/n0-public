@@ -69,6 +69,31 @@ and it is now sent on every request this tool makes. The sorting key is
 seek and a predicate on `date` alone is a full scan of eleven billion rows.
 Full write-up and reproduction: A-ZERO-THAT-MEANS-UNKNOWN.md.
 
+★ The second zero that means unknown, measured 2026-09-18
+---------------------------------------------------------
+The `project` column holds the **PEP 503 normalized** name, and only that. The
+name PyPI *shows* on the project page is not normalized. Asked over the same
+window, from the same endpoint, in the same minute:
+
+    project = 'Django'          ->       0 rows,           0 downloads
+    project = 'django'          ->  48,344 rows,  23,925,705 downloads
+    project = 'scikit_learn'    ->       0 rows,           0 downloads
+    project = 'scikit-learn'    ->  10,518 rows, 107,528,449 downloads
+
+HTTP 200 every time. No warning, no error, no empty-string hint — just zero.
+
+Until this was fixed, this file passed whatever it was handed straight into the
+`WHERE`, which meant that anyone typing their package's name the way PyPI
+displays it — `Django`, `PyYAML`, `Pillow`, `scikit_learn` — got a confident
+zero and a sentence explaining that PyPI's log has no rows for them yet. That is
+precisely the failure this whole tool exists to refuse, rebuilt inside it. It
+survived because every name this project ever tested on itself was already
+normalized.
+
+`normalize()` below now runs on every project name before it reaches a query,
+and the CLI prints the normalized form whenever it differs from what was typed,
+so the substitution is never silent.
+
 So this tool never reports a number on its own. Every run first asks a
 *reference* project — one downloaded tens of millions of times a day, so a
 small answer about it is impossible rather than merely surprising — for its
@@ -110,6 +135,7 @@ What it cannot tell you
 
 import argparse
 import json
+import re
 import sys
 import urllib.error
 import urllib.parse
@@ -233,6 +259,20 @@ def sql_literal(s):
     return "'" + s.replace("\\", "\\\\").replace("'", "\\'") + "'"
 
 
+def normalize(name):
+    """PEP 503 normalization: the only form the download log's `project` holds.
+
+    Runs of `-`, `_` and `.` collapse to a single `-`, then lowercase. This is
+    not cosmetic. The name PyPI shows you on the project page is the *display*
+    name, and `Django` and `scikit_learn` return zero rows here while `django`
+    and `scikit-learn` return twenty-four and a hundred and seven million
+    downloads (measured 2026-09-18; see the header). A tool that skips this step
+    answers "nobody downloaded your package" to people whose package is one of
+    the most downloaded on PyPI.
+    """
+    return re.sub(r"[-_.]+", "-", name).strip().lower()
+
+
 # --- the control ---------------------------------------------------------------
 
 def freshness(fetch=ask):
@@ -350,7 +390,7 @@ def classify(rows):
 # --- measurement ---------------------------------------------------------------
 
 def by_day(project, since=None, fetch=ask):
-    where = "project = {}".format(sql_literal(project))
+    where = "project = {}".format(sql_literal(normalize(project)))
     if since:
         where += " AND date >= toDate({})".format(sql_literal(since))
     return fetch(
@@ -360,7 +400,7 @@ def by_day(project, since=None, fetch=ask):
 
 
 def by_country(project, since=None, fetch=ask):
-    where = "project = {}".format(sql_literal(project))
+    where = "project = {}".format(sql_literal(normalize(project)))
     if since:
         where += " AND date >= toDate({})".format(sql_literal(since))
     return fetch(
@@ -476,6 +516,33 @@ def selftest():
     check("a quote in a project name is escaped",
           sql_literal("a'b") == "'a\\'b'")
 
+    # 8. ★ The display name is not the stored name (added 2026-09-18, after the
+    #    live endpoint answered 0 for 'Django' and 23,925,705 for 'django' in the
+    #    same minute). Without normalize(), this file answered "PyPI's log has no
+    #    rows for you" to the maintainers of the most downloaded packages there
+    #    are. These are counterexamples: each left-hand name is one PyPI itself
+    #    displays.
+    check("PEP 503: the name PyPI displays is normalized before it is asked",
+          normalize("Django") == "django" and
+          normalize("scikit_learn") == "scikit-learn" and
+          normalize("zope.interface") == "zope-interface" and
+          normalize("Flask_SQLAlchemy") == "flask-sqlalchemy" and
+          normalize("a--_.-b") == "a-b" and
+          normalize("already-normal") == "already-normal")
+
+    #    And it has to be normalized where it actually matters, which is inside
+    #    the statement — a normalize() nobody calls is the same bug with a
+    #    docstring. This check reads the emitted SQL.
+    def capture(sql, timeout=30):
+        captured.append(sql)
+        return [], None
+    captured = []
+    by_day("Django", since="2026-09-01", fetch=capture)
+    by_country("Django", since="2026-09-01", fetch=capture)
+    check("the normalized name is what reaches the WHERE clause",
+          len(captured) == 2 and
+          all("'django'" in s and "'Django'" not in s for s in captured))
+
     print()
     if fails:
         print("%d check(s) failed." % len(fails))
@@ -523,6 +590,7 @@ def main(argv=None):
     if args.as_json:
         print(json.dumps({
             "project": args.project,
+            "project_asked": normalize(args.project),
             "control": control,
             "error": err,
             "per_day": {d: {k: v for k, v in c.items() if k != "unparsed"}
@@ -533,7 +601,12 @@ def main(argv=None):
         return 0 if (control["reliable"] and not err) else 1
 
     print("=" * 72)
-    print("project: %s" % args.project)
+    asked = normalize(args.project)
+    if asked != args.project:
+        print("project: %s  (asked as %s — PEP 503; the log holds only this form)"
+              % (args.project, asked))
+    else:
+        print("project: %s" % args.project)
     print("control: %s" % ("OK" if control["reliable"] else "UNRELIABLE"))
     print("         %s" % control["why"])
     if control["note"]:
