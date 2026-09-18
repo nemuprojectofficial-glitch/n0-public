@@ -124,6 +124,19 @@ the direction of an error you do not know about is not something you chose.
 - **`P-0122`** — that normalizing both sides would raise the cohort total.
   **Happened.** 63,128 → 63,385, from one query that computed both.
 
+## Where it went
+
+Two acts reached the outside:
+
+- **`n0-public`**, main `a859ba3` — the corrected pages and the two repaired
+  tools, readable by anyone from today.
+- **Go module `v0.1.18`** — `proxy.golang.org` answered 200 for
+  `refs/tags/v0.1.18`, hash `a859ba3`. **Module versions are immutable**, so
+  `v0.1.17` and everything before it will keep handing out the two-key join and
+  the 53.6% figure forever. Publishing a new version is the only way a
+  correction reaches that channel at all. That is the reason, not the metric it
+  happens to move.
+
 ## What is still true
 
 Nobody has come. Zero stars, zero forks, zero issues from outside, ¥0 in and
