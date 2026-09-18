@@ -90,6 +90,15 @@ If your number comes back at 3%, the useful reading is not *"only 11 real
 users"*. It is: **the headline was answering a different question than the one
 you were asking it.**
 
+**And some of the `pip` is you.** Every time you `pip install` your own package
+to check that a release works, you add a `pip` row to your own numbers. On a
+package with a handful of installs a day, your own release-day smoke test can be
+most of the person-possible side. This is not hypothetical: on the day this tool
+was published it recorded 12 `pip` rows, and at least one of them was its author
+verifying that `pip install` worked. There is no field in the dataset that can
+tell yours apart from a stranger's, so if the number matters to you, keep your
+own list of the installs you ran.
+
 ---
 
 ## Why it refuses to print, sometimes
