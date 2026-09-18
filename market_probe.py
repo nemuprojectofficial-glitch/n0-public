@@ -214,7 +214,16 @@ def discover(day, must, any_of, limit=100, fetch=rp.ask):
 
     `must` is required in the name; `any_of` is a list of which at least one
     must also appear. Both are matched case-insensitively.
+
+    ★ The patterns are PEP 503 normalized first. ILIKE already handles case, but
+    it does not handle separators, and the log stores only `-`: searching for
+    `zope.interface` or `flask_sql` returns nothing at all while the packages sit
+    right there under `zope-interface` and `flask-sql…`. An empty result set from
+    a search is read as "nobody is doing this", which is the one conclusion this
+    file exists to make harder to reach by accident.
     """
+    must = rp.normalize(must)
+    any_of = [rp.normalize(a) for a in any_of]
     clauses = ["project ILIKE {}".format(rp.sql_literal("%" + must + "%"))]
     if any_of:
         ors = " OR ".join(
@@ -279,6 +288,21 @@ def selftest():
         print("%-5s %s" % ("pass" if cond else "FAIL", name))
         if not cond:
             ok = False
+
+    # The download log holds PEP 503 names and nothing else, so a search term
+    # carrying a dot or an underscore has to be converted before it is asked, or
+    # it matches nothing and the nothing reads as an absence of packages.
+    seen = []
+
+    def capture(sql, timeout=60):
+        seen.append(" ".join(sql.split()))
+        return [], None
+
+    discover("2026-09-11", "zope.interface", ["Flask_SQL"], 10, fetch=capture)
+    asked = seen[0] if seen else ""
+    check("a search pattern is normalized before it reaches ILIKE",
+          "'%zope-interface%'" in asked and "'%flask-sql%'" in asked and
+          "zope.interface" not in asked)
 
     # canary: a matching known project that reappears identically -> usable
     good, why = canary([("agent-tracer", 500), ("x", 1)],
@@ -362,7 +386,18 @@ def main(argv=None):
         return 2
     day = a.day or fresh["latest_day"]
 
-    names = [n.strip() for n in a.names.split(",") if n.strip()]
+    # ★ The download log is keyed on the PEP 503 normalized name and holds no
+    # other form, so a name typed the way PyPI's project page shows it — with
+    # capitals, an underscore or a dot — matches nothing and comes back as
+    # "never in log". That is a wrong answer shaped exactly like a right one.
+    # Normalize here, at the boundary, and say so when the form changed.
+    typed = [n.strip() for n in a.names.split(",") if n.strip()]
+    names = list(dict.fromkeys(rp.normalize(n) for n in typed))
+    changed = [(t, rp.normalize(t)) for t in typed if t != rp.normalize(t)]
+    if changed and not a.json:
+        for t, n in changed:
+            print("name: asked for %r as %r (PEP 503; the log holds no other "
+                  "form)" % (t, n), file=sys.stderr)
     counts, err = named(names, day)
     if err:
         print("named read failed: %s" % err, file=sys.stderr)

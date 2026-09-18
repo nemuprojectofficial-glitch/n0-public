@@ -3,8 +3,39 @@
 **Short answer: about 600 in its first week — and almost none of them are people.**
 
 *Measured 2026-09-12 from the public PyPI download log (the one ClickHouse
-serves at `sql-clickhouse.clickhouse.com`, no credentials, read-only). Every
-number below is reproducible; the exact SQL is at the bottom.*
+serves at `sql-clickhouse.clickhouse.com`, no credentials, read-only),
+re-measured 2026-09-18. Every number below is reproducible; the exact SQL is at
+the bottom.*
+
+---
+
+> ## ⚠ Correction applied 2026-09-18 (session 80) — the cohort counts moved
+>
+> **The two tables behind every cohort figure on this page are keyed on
+> different forms of a project's name, and the join used the bare columns.**
+> `pypi.projects` stores the name as its author uploaded it, which is the name
+> PyPI's project page shows. The download log stores only the PEP 503 normalized
+> form. Asked in the same minute, both answering HTTP 200:
+>
+> | asked | `pypi.projects` | download log, 2026-09-11 |
+> |---|---|---|
+> | `Django` | 842 files | **no row** |
+> | `django` | **no row** | 1,468,665 |
+> | `zope.interface` | 2390 files | **no row** |
+> | `zope-interface` | **no row** | 1,790,045 |
+>
+> Joining them on the raw columns matches only projects whose uploaded name was
+> already normalized and reports **zero downloads** for the rest. The cohort
+> still comes back as 330 projects; 11 of them were silently zeroed.
+>
+> The giveaway was in this page's own table. It said 11 of 330 new packages got
+> no person-possible fetch at all in the D+0…D+6 window — the window that
+> includes the launch wave every package gets. Re-measured with both sides
+> normalized: **330 of 330**. The 11 were the 11 non-normalized names.
+>
+> All figures below are the corrected ones; the superseded values are named
+> where they appeared. Every one moved up: a key mismatch can only lose rows.
+> **Nothing here was over-stated. Several things were under-stated.**
 
 ---
 
@@ -44,6 +75,12 @@ number below is reproducible; the exact SQL is at the bottom.*
 > truncation. But reproducing a number is not the same as having drawn the right
 > population, and this project has written down five times what happens when
 > those two get treated as one thing.
+>
+> **★ 2026-09-18: the sixth time was this paragraph.** Both query shapes joined
+> the metadata table's uploaded name to the download log's normalized name, so
+> the eight agreeing figures were eight agreeing wrong figures. The replication
+> was genuine; it replicated the assumption along with the method. **Two
+> implementations of one mistake agree with each other, not with the world.**
 >
 > **The check that settles it**, for whoever runs it next: take a sample of the
 > cohort's member names and ask **pypi.org** — not the analytics table — for each
@@ -91,15 +128,22 @@ raised — which is exactly why the comparison below is worth something.
 
 | birth cohort | packages | got *any* fetch | median total | p90 total | largest |
 |---|---:|---:|---:|---:|---:|
-| 2026-09-04 | 330 | 319 (96.7%) | **609** | 1,804 | 44,230 |
-| 2026-09-03 | 308 | 296 (96.1%) | **451** | 2,122 | 35,773 |
-| 2026-08-01 | 252 | 245 (97.2%) | **634** | 3,444 | 36,754 |
+| 2026-09-04 | 330 | **330 (100%)** | **638** | 1,978 | 44,230 |
+| 2026-09-03 | 308 | **308 (100%)** | **503** | 2,122 | 35,773 |
+| 2026-08-01 | 252 | **252 (100%)** | **664** | 3,444 | 36,754 |
+
+> *Corrected 2026-09-18. First published as 319 (96.7%) / 296 (96.1%) / 245
+> (97.2%), medians 609 / 451 / 634. The apparent exceptions were the join
+> described in the correction notice — not packages nobody fetched, but packages
+> asked for under a spelling the download log does not use.*
 
 Three cohorts from two different months, measured independently, land in the
-same place: **a new package's first week is a few hundred downloads, and about
-97% of new packages get some.**
+same place: **a new package's first week is a few hundred downloads, and every
+single new package gets some.**
 
-That last figure is the important one. Almost nothing on PyPI gets *zero*.
+That last figure is the important one, and it is not a rounding of 97%: across
+890 packages born on three different days, **the number that got zero fetches in
+their first week is zero.** Nothing on PyPI is left alone.
 Whatever those downloads are, they are not evidence that anybody wanted the
 package — they happen to essentially everyone.
 
@@ -128,11 +172,19 @@ split. Skip the first 72 hours and the same measurement changes completely.
 
 | window | got at least one | median | p90 |
 |---|---:|---:|---:|
-| days 0–6 (includes the launch wave) | **319 of 330 — 96.7%** | **29** | 106 |
-| days 3–7 (launch wave excluded) | **177 of 330 — 53.6%** | **1** | 47 |
+| days 0–6 (includes the launch wave) | **330 of 330 — 100%** | **30** | 111 |
+| days 3–7 (launch wave excluded) | **183 of 330 — 55.5%** | **1** | 49 |
 
-The median falls from **29 to 1**. The share of packages with "at least one
-real-looking install" falls from 97% to 54%.
+The median falls from **30 to 1**. The share of packages with "at least one
+real-looking install" falls from 100% to 56%.
+
+> *Corrected 2026-09-18. As first published this table read 319 of 330 (96.7%),
+> median 29, p90 106 for days 0–6 and 177 of 330 (53.6%), median 1, p90 47 for
+> days 3–7. The join behind it compared two different spellings of a project's
+> name — see the correction notice at the top — and the 11 packages it showed
+> with no downloads at all in the wide window were exactly the 11 whose uploaded
+> name is not in PEP 503 form. Every one of the 330 was fetched in its first
+> week.*
 
 > **Nothing about the packages changed. Only the window did.**
 
@@ -150,15 +202,15 @@ Cohort 2026-09-04, days 3–7, person-possible fetches, n = 330:
 
 | at least | packages | share |
 |---|---:|---:|
-| 0 | 153 | 46.4% |
-| 1 | 177 | 53.6% |
-| 5 | 117 | 35.5% |
-| 25 | 59 | 17.9% |
-| **47** — the p90 | *(not counted directly; 10% by definition of p90)* | ~10% |
-| 100 | 15 | 4.5% |
+| 0 | 147 | 44.5% |
+| 1 | 183 | 55.5% |
+| 5 | 122 | 37.0% |
+| 25 | 62 | 18.8% |
+| **49** — the p90 | *(not counted directly; 10% by definition of p90)* | ~10% |
+| 100 | 16 | 4.8% |
 | 1000 | 5 | 1.5% |
 
-Below 47, you are inside the range that unknown packages produce by default.
+Below 49, you are inside the range that unknown packages produce by default.
 Above it, something happened that does not happen to most packages.
 
 ## Controls
@@ -171,7 +223,7 @@ cohort, flatters you.
 
 | control | expected | measured |
 |---|---|---|
-| **replication** — recompute a published result with the new query shape | the cohort figures published on 2026-09-12 | 177 / 117 / 59 / 15 / 5, median 1, p90 47, p99 2187, max 37,175, total 63,128 — **identical** |
+| **replication** — recompute a published result with the new query shape | the cohort figures published on 2026-09-12 | 177 / 117 / 59 / 15 / 5, median 1, p90 47, p99 2187, max 37,175, total 63,128 — **identical, and identically wrong**: both shapes joined the project-metadata table's uploaded name to the download log's normalized name. Corrected 2026-09-18 to 183 / 122 / 62 / 16 / 5, p90 49, total 63,385 |
 | **freshness floor** — a reference project's latest day must clear 100,000 | ≫ 100,000 | `requests`, 2026-09-11: **42,483,582** |
 | **cohort size sanity** — neighbouring birth days must be the same order | same order | 07-31: 327 · 08-01: 252 · 08-02: 283 · 09-03: 308 · 09-04: 330 |
 | **window must be closed** | no window may end after the last complete day | last day in the log: 2026-09-11; latest window used ends 09-10 |
@@ -203,14 +255,18 @@ nothing already known to compare against, those zeros were publishable.
 ## Reproduce it
 
 ```sql
-WITH c AS (SELECT name FROM pypi.projects GROUP BY name
+-- `nn` is PEP 503 normalization. It is not optional: pypi.projects holds the
+-- name as uploaded, this table holds only the normalized form, and joining the
+-- bare columns silently zeroes every project whose name differs between them.
+WITH c AS (SELECT name, lower(replaceRegexpAll(name, '[-_.]+', '-')) AS nn
+           FROM pypi.projects GROUP BY name
            HAVING toDate(min(upload_time)) = '2026-09-04'),
      d AS (SELECT project, sum(count) AS total,
                   sumIf(count, installer IN ('conda','flit','hatch','pdm','pex',
                         'pip','pip-tools','pipenv','poetry','rye','twine','uv')) AS person
            FROM pypi.pypi_downloads_per_day_by_version_by_installer_by_type
            WHERE date >= '2026-09-04' AND date <= '2026-09-10'
-             AND project IN (SELECT name FROM c)
+             AND project IN (SELECT nn FROM c)
            GROUP BY project)
 SELECT count() AS n,
        countIf(total >= 1) AS any_fetch,
@@ -220,12 +276,16 @@ SELECT count() AS n,
        quantileExact(0.5)(person) AS person_median,
        quantileExact(0.9)(person) AS person_p90
 FROM (SELECT c.name AS name, ifNull(d.total, 0) AS total, ifNull(d.person, 0) AS person
-      FROM c LEFT JOIN d ON c.name = d.project)
+      FROM c LEFT JOIN d ON c.nn = d.project)
 ```
 
 `GET https://sql-clickhouse.clickhouse.com/?user=demo&default_format=JSONEachRow&query=…`
 — no credentials, read-only, and the `LEFT JOIN` is what keeps packages with
 zero downloads in the denominator instead of silently dropping them.
+
+Add `&read_overflow_mode=throw` to the URL. Without it this endpoint answers a
+scan that is too large by returning the aggregate of the fragment it managed to
+read, with HTTP 200 and nothing to say so — see `A-ZERO-THAT-MEANS-UNKNOWN.md`.
 
 To put one project on this ladder, `cohort_probe.py` in this repository does it
 for you, and refuses to answer if the window has not closed yet. To split your

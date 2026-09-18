@@ -16,7 +16,7 @@ can drive, on at least one day in the week after release.* That sounded like a
 real bar until somebody measured the bar:
 
     of 330 projects whose first-ever upload to PyPI was 2026-09-04,
-    177 of them (53.6%) cleared exactly that bar in days 3-7.
+    183 of them (55.5%) cleared exactly that bar in days 3-7.
     Of 308 born 2026-09-03, 155 (50.3%) did.
 
 A test that a coin flip passes is not a test. The prediction would have come
@@ -51,6 +51,40 @@ read-only SQL endpoint (no account, no key):
 Neither is this project's data and neither can be written to from here. The
 `user=demo` in the URL is that service's published read-only role, not anyone's
 credential.
+
+The two keys
+------------
+★ These two tables are keyed on different forms of the same name, and nothing in
+either of them says so. Measured 2026-09-18, same endpoint, same minute, every
+request HTTP 200:
+
+    pypi.projects   name = 'Django'          842 files
+                    name = 'django'          no row
+                    name = 'zope.interface'  2390 files
+                    name = 'zope-interface'  no row
+
+    download log    project = 'django'           1,468,665 on 2026-09-11
+                    project = 'Django'           no row
+                    project = 'zope-interface'   1,790,045 on 2026-09-11
+                    project = 'zope.interface'   no row
+
+`pypi.projects` holds the name as its author uploaded it — the name PyPI shows on
+the project page. The download log holds the PEP 503 normalized form, and only
+that. They are exact inversions of each other, so a join on the bare columns is a
+join between two different keys.
+
+It does not fail. It returns the whole cohort, with the mismatching members set
+to zero downloads. On the 2026-09-04 cohort: 11 of 330 uploaded names were not
+already normalized, 6 of those had fetches, and the largest had 142
+person-possible fetches reported as none — a project in the top 5% of its cohort,
+placed below the bottom rung. Everything this file prints is now normalized on
+both sides before it is compared; `norm_sql()` is that expression, `normalize()`
+is the same rule in Python, and the self-test reads the emitted SQL rather than
+trusting that either was called.
+
+The same shape, one level down, is why A-ZERO-THAT-MEANS-UNKNOWN.md exists: a
+zero that means "asked with the wrong key" is printed identically to a zero that
+means "nobody came".
 
 The four controls, and why each one can actually say no
 --------------------------------------------------------
@@ -89,6 +123,7 @@ Exit status: 0 measured and every control agreed, 1 a control refused,
 import argparse
 import datetime
 import json
+import re
 import sys
 import urllib.error
 import urllib.parse
@@ -96,7 +131,7 @@ import urllib.request
 
 try:                                            # same flat package, same endpoint
     from reach_probe import (ENDPOINT, ROLE, TABLE, DAILY, PERSON_POSSIBLE,
-                             sql_literal, freshness)
+                             sql_literal, freshness, normalize)
 except ImportError:                             # running the file on its own
     ENDPOINT = "https://sql-clickhouse.clickhouse.com/"
     ROLE = "demo"
@@ -108,12 +143,27 @@ except ImportError:                             # running the file on its own
     def sql_literal(s):
         return "'" + s.replace("\\", "\\\\").replace("'", "\\'") + "'"
 
+    def normalize(name):                        # PEP 503
+        return re.sub(r"[-_.]+", "-", str(name)).lower()
+
     freshness = None                            # the control is not optional
     print("cohort_probe: reach_probe.py must sit beside this file; its freshness "
           "control is not optional.", file=sys.stderr)
 
 PROJECTS = "pypi.projects"
 UA = "cohort-probe (read-only; github.com/nemuprojectofficial-glitch/n0-public)"
+
+
+def norm_sql(column):
+    """PEP 503 normalization, expressed in SQL, for `column`.
+
+    The same rule as `normalize()`, and it has to stay the same rule: this
+    expression is what makes a row in `pypi.projects` comparable to a row in the
+    download log, and the two tables are keyed on different forms of the same
+    name (see "The two keys" above). A drift between the Python and the SQL
+    would not raise anything — it would quietly stop matching.
+    """
+    return "lower(replaceRegexpAll({}, '[-_.]+', '-'))".format(column)
 
 # Days after first upload. The lower edge is not 0 on purpose: every new release
 # is fetched within minutes by mirrors, malware scanners and "new on PyPI" feeds,
@@ -190,18 +240,43 @@ def installer_list():
 
 # --- the pieces ----------------------------------------------------------------
 
-def birth_date(project, fetch=ask):
-    """The calendar day of the project's first-ever file upload, or None."""
-    rows, err = fetch("SELECT toDate(min(upload_time)) AS d FROM {} WHERE name = {}"
-                      .format(PROJECTS, sql_literal(project)))
-    if err or not rows:
-        return None, err or "no row returned"
-    d = rows[0].get("d")
+def identify(project, fetch=ask):
+    """Resolve one typed name into (display name, PEP 503 name, birthday).
+
+    `pypi.projects` is keyed on the name as the author uploaded it. The download
+    log is keyed on the PEP 503 normalized form. Neither table will answer to the
+    other's key, so the lookup is done on the normalized form of *both* sides —
+    that is the only comparison in which a typed name matches its own project
+    whichever of the two forms was typed.
+
+    Returns ({"shown": ..., "stored": ..., "day": ...}, error).
+    """
+    stored = normalize(project)
+    rows, err = fetch(
+        "SELECT name, toDate(min(upload_time)) AS d FROM {} WHERE {} = {} "
+        "GROUP BY name ORDER BY d".format(
+            PROJECTS, norm_sql("name"), sql_literal(stored)))
+    if err:
+        return None, err
     # ClickHouse returns 1970-01-01 for min() over an empty set, which is a date
     # and therefore looks like an answer. It is not one.
-    if not d or str(d).startswith("1970"):
-        return None, "no upload on record for %r" % project
-    return str(d), None
+    rows = [r for r in rows if r.get("d") and not str(r["d"]).startswith("1970")]
+    if not rows:
+        return None, ("no upload on record for %r (asked as %r, which is the "
+                      "form PyPI stores)" % (project, stored))
+    shown = str(rows[0].get("name"))
+    out = {"shown": shown, "stored": stored, "day": str(rows[0].get("d"))}
+    if len(rows) > 1:
+        out["also"] = [str(r.get("name")) for r in rows[1:]]
+    return out, None
+
+
+def birth_date(project, fetch=ask):
+    """The calendar day of the project's first-ever file upload, or None."""
+    who, err = identify(project, fetch=fetch)
+    if who is None:
+        return None, err
+    return who["day"], None
 
 
 def cohort_sizes(days, fetch=ask):
@@ -218,12 +293,20 @@ def cohort_sizes(days, fetch=ask):
 
 def ladder(day, w0, w1, fetch=ask):
     """The whole cohort born on `day`, counted over the window [w0, w1]."""
+    # ★ Both sides of this join are normalized, and both sides have to be. `c`
+    # comes out of pypi.projects, which stores the name as uploaded; `d` comes
+    # out of the download log, which stores only the PEP 503 form. Joining the
+    # bare columns is a join between two different keys: it matches the projects
+    # whose display name happens to already be normalized, and silently gives
+    # every other project person = 0. Measured on the 2026-09-04 cohort: 11 of
+    # 330 names were not already normalized, 6 of those had downloads, and the
+    # largest of them had 142 person-possible fetches counted as none.
     sql = """
-    WITH c AS (SELECT name FROM {projects} GROUP BY name
+    WITH c AS (SELECT name, {norm_name} AS nn FROM {projects} GROUP BY name
                HAVING toDate(min(upload_time)) = {day}),
          d AS (SELECT project, sum(count) AS person FROM {table}
                WHERE date >= {w0} AND date <= {w1} AND installer IN ({inst})
-                 AND project IN (SELECT name FROM c)
+                 AND project IN (SELECT nn FROM c)
                GROUP BY project)
     SELECT count() AS n, {rungs},
            quantileExact(0.5)(person)  AS p50,
@@ -231,8 +314,9 @@ def ladder(day, w0, w1, fetch=ask):
            quantileExact(0.99)(person) AS p99,
            max(person) AS pmax, sum(person) AS total
     FROM (SELECT c.name AS name, ifNull(d.person, 0) AS person
-          FROM c LEFT JOIN d ON c.name = d.project)
+          FROM c LEFT JOIN d ON c.nn = d.project)
     """.format(projects=PROJECTS, table=TABLE, inst=installer_list(),
+               norm_name=norm_sql("name"),
                day=sql_literal(day), w0=sql_literal(w0), w1=sql_literal(w1),
                rungs=", ".join("countIf(person >= %d) AS ge%d" % (r, r)
                                for r in RUNGS))
@@ -251,12 +335,20 @@ def ladder(day, w0, w1, fetch=ask):
 
 
 def project_total(project, w0, w1, fetch=ask):
-    """One project's person-possible fetches over the window."""
+    """One project's person-possible fetches over the window.
+
+    ★ The name is normalized before it reaches the WHERE clause. Without that,
+    a project whose page on PyPI says `My_Package` matches nothing in the
+    download log, the sum is 0, and the 0 is then placed on the ladder as a
+    real measurement — the tool tells its own author, in a full sentence, that
+    nobody fetched their package. That is the exact failure this project wrote
+    A-ZERO-THAT-MEANS-UNKNOWN.md about.
+    """
     rows, err = fetch(
         "SELECT sum(count) AS person FROM {} WHERE project = {} "
         "AND date >= {} AND date <= {} AND installer IN ({})"
-        .format(TABLE, sql_literal(project), sql_literal(w0), sql_literal(w1),
-                installer_list()))
+        .format(TABLE, sql_literal(normalize(project)), sql_literal(w0),
+                sql_literal(w1), installer_list()))
     if err:
         return None, err
     return (_int(rows[0].get("person")) if rows else 0) or 0, None
@@ -429,18 +521,22 @@ def selftest():
         if not ok:
             fails.append(name)
 
-    LAD = {"n": 330, "rungs": {1: 177, 5: 117, 25: 59, 100: 15, 1000: 5},
-           "p50": 1, "p90": 47, "p99": 2187, "max": 37175, "total": 63128}
+    # ★ Re-measured 2026-09-18 with both sides of the join normalized. The
+    # numbers this file carried until then (ge1 177, total 63,128) were taken
+    # with the bare join described in `ladder`, which dropped every cohort
+    # member whose uploaded name was not already in PEP 503 form.
+    LAD = {"n": 330, "rungs": {1: 183, 5: 122, 25: 62, 100: 16, 1000: 5},
+           "p50": 1, "p90": 49, "p99": 2187, "max": 37175, "total": 63385}
 
     # 1. The bar this project actually set for itself is cleared by half the
     #    cohort. That is the finding the whole file exists for.
-    check("'at least one' is cleared by 53.6% of a birth cohort",
-          abs(LAD["rungs"][1] / float(LAD["n"]) - 0.536) < 0.001)
+    check("'at least one' is cleared by 55.5% of a birth cohort",
+          abs(LAD["rungs"][1] / float(LAD["n"]) - 0.5545) < 0.001)
 
     # 2. Zero is a measurement, not missing data, and it must be placed.
     rung, cleared, share = place(0, LAD)
     check("zero is placed at the bottom, not treated as unknown",
-          rung is None and cleared == 153 and abs(share - 0.4636) < 0.001)
+          rung is None and cleared == 147 and abs(share - 0.4455) < 0.001)
 
     # 3. A value exactly on a rung clears it. Off-by-one here would move a
     #    package a whole decile.
@@ -511,6 +607,73 @@ def selftest():
     # 8. The project name reaches the query as a value, never as syntax.
     check("a quote in a project name is escaped", sql_literal("a'b") == "'a\\'b'")
 
+    # 9. The two keys. `pypi.projects` stores the name as uploaded; the download
+    #    log stores only the PEP 503 form. Measured 2026-09-18 over the same
+    #    endpoint, same minute, both HTTP 200:
+    #
+    #        pypi.projects   'Django' 842 files    'django'         no row
+    #                        'zope.interface' 2390 'zope-interface' no row
+    #        download log    'django' 1,468,665    'Django'         no row
+    #                        'zope-interface' 1,790,045            'zope.interface' no row
+    #
+    #    Exactly inverted. So every one of these has to be checked where it
+    #    actually matters — inside the statement. A normalize() nobody calls is
+    #    the same bug with a comment on top of it.
+    check("PEP 503 normalization matches the SQL expression's rule",
+          normalize("Django") == "django" and
+          normalize("zope.interface") == "zope-interface" and
+          normalize("Flask_SQLAlchemy") == "flask-sqlalchemy" and
+          norm_sql("name") == "lower(replaceRegexpAll(name, '[-_.]+', '-'))")
+
+    seen = []
+
+    def capture(sql, timeout=60):
+        seen.append(" ".join(sql.split()))
+        return [], None
+
+    # 10. The cohort join. This is the one that was wrong: `c` comes from
+    #     pypi.projects and `d` from the download log, and joining their bare
+    #     name columns compares two different keys. It does not raise. It
+    #     returns 330 rows, of which 11 were silently zeroed.
+    seen[:] = []
+    ladder("2026-09-04", "2026-09-07", "2026-09-11", fetch=capture)
+    joined = seen[0] if seen else ""
+    check("the cohort join compares normalized names on both sides",
+          "c.nn = d.project" in joined and
+          "IN (SELECT nn FROM c)" in joined and
+          "c.name = d.project" not in joined)
+
+    # 11. The reader's own number. A project shown as `My_Package` on PyPI has
+    #     no row under that name in the download log, so an un-normalized name
+    #     here returns 0 — and the 0 is then printed as a measured result and
+    #     placed at the bottom of the ladder.
+    seen[:] = []
+    project_total("My_Package", "2026-09-07", "2026-09-11", fetch=capture)
+    asked = seen[0] if seen else ""
+    check("the reader's own total is asked under the name the log holds",
+          "project = 'my-package'" in asked and "My_Package" not in asked)
+
+    # 12. And the lookup has to accept either form, because the person reading
+    #     their PyPI page sees one form and the person reading a pip command
+    #     sees the other. Matching on the raw column refuses one of the two.
+    seen[:] = []
+    identify("zope.interface", fetch=capture)
+    looked = seen[0] if seen else ""
+    check("a project is found whichever of its two names was typed",
+          norm_sql("name") in looked and "'zope-interface'" in looked)
+
+    # 13. identify() must not turn "the endpoint failed" into "no such project",
+    #     and must not read 1970 as a birthday.
+    def failing(sql, timeout=60):
+        return [], "HTTPError: 503"
+    check("a failed lookup is an error, not a missing project",
+          identify("x", fetch=failing)[1] == "HTTPError: 503")
+
+    def epoch_named(sql, timeout=60):
+        return [{"name": "x", "d": "1970-01-01"}], None
+    check("a 1970 row is not read as a birthday by identify()",
+          identify("x", fetch=epoch_named)[0] is None)
+
     print()
     if fails:
         print("%d check(s) failed." % len(fails))
@@ -573,13 +736,29 @@ def main(argv=None):
         print("note:    %s" % f["note"])
     print()
 
-    day = args.date
-    if day is None:
-        day, err = birth_date(args.project, fetch=ask)
-        if day is None:
+    # One lookup settles both of the project's names. Saying out loud which name
+    # was actually asked for is not a detail: the two tables this tool reads are
+    # keyed on different forms, and a silent substitution is how a wrong answer
+    # gets to look like a right one.
+    who = None
+    if args.project:
+        who, err = identify(args.project, fetch=ask)
+        if who is None:
             print("no measurement: %s" % err)
             return 2
-        print("%s was first uploaded on %s" % (args.project, day))
+        if args.project not in (who["shown"], who["stored"]):
+            print("name:    you typed %r" % args.project)
+        if who["shown"] != who["stored"]:
+            print("name:    PyPI's page says %r; PyPI's download log stores %r. "
+                  "Both are used below." % (who["shown"], who["stored"]))
+        if who.get("also"):
+            print("note:    %d other uploaded name(s) normalize to the same key: %s"
+                  % (len(who["also"]), ", ".join(who["also"])))
+
+    day = args.date
+    if day is None:
+        day = who["day"]
+        print("%s was first uploaded on %s" % (who["shown"], day))
 
     d = _day(day)
     w0 = str(d + datetime.timedelta(days=WINDOW_FROM))
@@ -626,13 +805,13 @@ def main(argv=None):
 
     result = {"day": day, "window": [w0, w1], "cohort": lad}
     if args.project:
-        mine, err = project_total(args.project, w0, w1)
+        mine, err = project_total(who["stored"], w0, w1)
         if err:
-            print("\nno measurement for %s itself: %s" % (args.project, err))
+            print("\nno measurement for %s itself: %s" % (who["shown"], err))
             return 2
         rung, cleared, share = place(mine, lad)
         print()
-        print("%s: %d over the same window" % (args.project, mine))
+        print("%s: %d over the same window" % (who["shown"], mine))
         if rung is None:
             print("  below the lowest rung, with %d of %d others (%.1f%%)"
                   % (cleared, lad["n"], 100.0 * share))
@@ -643,7 +822,8 @@ def main(argv=None):
         print("  Read this as an upper bound on people, not a count of them: one")
         print("  person's CI is many fetches, and a crawler that names itself pip")
         print("  is counted here as a person could be.")
-        result["project"] = {"name": args.project, "person_possible": mine,
+        result["project"] = {"name": who["shown"], "name_asked": who["stored"],
+                             "name_typed": args.project, "person_possible": mine,
                              "rung": rung, "share_clearing": share}
 
     if args.json:

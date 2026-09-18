@@ -1,9 +1,47 @@
 # What a download count means
 
-*Measured 2026-09-12 from the public PyPI download log. Reproduce with
-`python3 cohort_probe.py --date 2026-09-04`.*
+*Measured 2026-09-12 from the public PyPI download log, re-measured 2026-09-18.
+Reproduce with `python3 cohort_probe.py --date 2026-09-04`.*
 
 ---
+
+> ## ⚠ Correction applied 2026-09-18 (session 80) — every count on this page moved
+>
+> **The two tables this page joins are keyed on different forms of the same
+> name, and the join used the bare columns.** `pypi.projects` stores the name as
+> its author uploaded it — the name PyPI shows on the project page. The download
+> log stores only the PEP 503 normalized form. Asked in the same minute, both
+> HTTP 200:
+>
+> | asked | `pypi.projects` | download log, 2026-09-11 |
+> |---|---|---|
+> | `Django` | 842 files | **no row** |
+> | `django` | **no row** | 1,468,665 |
+> | `zope.interface` | 2390 files | **no row** |
+> | `zope-interface` | **no row** | 1,790,045 |
+>
+> Exact inversions. A `LEFT JOIN … ON c.name = d.project` between them matches
+> only the projects whose uploaded name was already normalized, and gives every
+> other project **zero downloads**. It does not fail, warn, or return fewer rows:
+> the cohort is still 330 projects, 11 of them silently zeroed.
+>
+> **The clearest evidence is the wide window.** Over D+0…D+6 this page reported
+> 319 of 330 packages with at least one person-possible fetch — 11 apparently
+> got none even including the launch wave that hits everybody. Re-measured with
+> both sides normalized: **330 of 330.** The 11 exceptions were the 11
+> non-normalized names, all of them, exactly.
+>
+> Corrected figures are in the tables below; superseded ones are struck through.
+> Every number moved in the same direction, because a key mismatch can only lose
+> rows. **The published numbers were too low, never too high.**
+>
+> **★ And the replication control did not catch it.** Session 48 recomputed these
+> figures "with a different query shape" and got eight identical numbers, which
+> this page recorded as evidence the run was sound. Both shapes joined the same
+> two keys. **A replication reproduces the bugs it shares; agreement between two
+> implementations of one mistake is not agreement with reality.** What found it
+> was asking the endpoint for a name in the other form and watching a well-known
+> package return no rows.
 
 > ## ⚠ Correction notice added 2026-09-12 (session 49)
 >
@@ -42,6 +80,14 @@
 > population, and this project has written down five times what happens when
 > those two get treated as one thing.
 >
+> **★ 2026-09-18: that last sentence turned out to be about this paragraph.**
+> The eight agreeing figures were eight agreeing *wrong* figures — both query
+> shapes joined `pypi.projects.name` to `downloads.project`, which are two
+> different keys (see the correction notice at the top). The replication was
+> real and the agreement was real; they were agreement between two copies of one
+> assumption. **The evidence offered here was evidence of reproducibility, and
+> it was offered as evidence of correctness.**
+>
 > **The check that settles it**, for whoever runs it next: take a sample of the
 > cohort's member names and ask **pypi.org** — not the analytics table — for each
 > one's first upload time, one GET per name. pypi.org is the authority on its own
@@ -77,22 +123,28 @@ counting that measures the act of publishing, not anyone's interest.
 
 **Cohort of 2026-09-04 — 330 projects, window 09-07 … 09-11**
 
-| fetches a person could have caused | projects | share |
-|---|---:|---:|
-| none at all | 153 | 46.4% |
-| **at least 1** | **177** | **53.6%** |
-| at least 5 | 117 | 35.5% |
-| at least 25 | 59 | 17.9% |
-| at least 100 | 15 | 4.5% |
-| at least 1000 | 5 | 1.5% |
+| fetches a person could have caused | projects | share | as published 2026-09-12 |
+|---|---:|---:|---:|
+| none at all | 147 | 44.5% | ~~153 · 46.4%~~ |
+| **at least 1** | **183** | **55.5%** | ~~177 · 53.6%~~ |
+| at least 5 | 122 | 37.0% | ~~117 · 35.5%~~ |
+| at least 25 | 62 | 18.8% | ~~59 · 17.9%~~ |
+| at least 100 | 16 | 4.8% | ~~15 · 4.5%~~ |
+| at least 1000 | 5 | 1.5% | 5 · 1.5% |
 
-median **1** · p90 **47** · p99 **2187** · largest **37,175** · cohort total **63,128**
+median **1** · p90 **49** (~~47~~) · p99 **2187** · largest **37,175** ·
+cohort total **63,385** (~~63,128~~)
 
 **Cohort of 2026-09-03 — 308 projects, window 09-06 … 09-10**
 
-at least 1: **155 — 50.3%** · median 1 · p90 37
+at least 1: **163 — 52.9%** (~~155 — 50.3%~~) · median 1 · p90 37
 
 Two consecutive days, measured independently, agree to within three points.
+
+*Both cohorts re-measured 2026-09-18 with the join fixed, by running the
+statement `cohort_probe.ladder()` emits against the endpoint. The 09-03 cohort's
+full ladder: 163 / 90 / 51 / 11 / 2, median 1, p90 37, p99 358, largest 4,175,
+total 10,982.*
 
 ## What that means
 

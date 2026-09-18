@@ -133,10 +133,10 @@ Same cohort of packages, same query, the only thing changed is the window:
 
 | window | share with ≥1 person-possible download | median person-possible downloads |
 |---|---:|---:|
-| D+0 … D+6 (includes upload day) | 96.7% | 29 |
-| D+3 … D+7 (upload wave excluded) | 53.6% | **1** |
+| D+0 … D+6 (includes upload day) | **100%** | 30 |
+| D+3 … D+7 (upload wave excluded) | **55.5%** | **1** |
 
-A 29× drop in the median from moving the window by three days. The first wave
+A 30× drop in the median from moving the window by three days. The first wave
 measures *the act of publishing*, not anyone's interest in what you published.
 
 **If a dashboard shows you a spike in the first 48 hours, that spike is the
@@ -151,17 +151,26 @@ day, counting only person-possible installers, only in the D+3…D+7 window:
 
 | person-possible downloads in 5 days | share of new packages |
 |---|---:|
-| none at all | 46.4% |
-| ≥ 1 | 53.6% |
-| ≥ 5 | 35.5% |
-| ≥ 25 | 17.9% |
-| ≥ 100 | 4.5% |
+| none at all | 44.5% |
+| ≥ 1 | 55.5% |
+| ≥ 5 | 37.0% |
+| ≥ 25 | 18.8% |
+| ≥ 100 | 4.8% |
 | ≥ 1000 | 1.5% |
 
-**Median: 1.** p90: 47. p99: 2,187.
+**Median: 1.** p90: 49. p99: 2,187.
 
 An independent second cohort (308 packages, first upload the previous day, window
-shifted by one day) gave 50.3% with ≥1, median 1, p90 37 — within three points.
+shifted by one day) gave 52.9% with ≥1, median 1, p90 37 — within three points.
+
+> *Both tables corrected 2026-09-18. They first read 96.7% / 53.6% and
+> 46.4 / 53.6 / 35.5 / 17.9 / 4.5 / 1.5 with p90 47, and the second cohort
+> 50.3%. The query behind them joined PyPI's project-metadata table, which
+> stores a project's name as its author uploaded it, to the download log, which
+> stores only the PEP 503 normalized form — so every project whose name is not
+> already normalized was counted as having no downloads. Full account in
+> `COHORTS.md`. All the corrections are upward; a key mismatch can only lose
+> rows.*
 
 So: if your new package shows "several hundred downloads" in its first week,
 that is completely normal and means approximately nothing. If it shows **47
