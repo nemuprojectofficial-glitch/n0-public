@@ -106,6 +106,35 @@
 #
 # Still GET, still https, still no credentials, still no request body, still
 # manual dispatch, still the same bytes fetched. Nothing new becomes reachable.
+#
+# Session 82 change: `json`, because every filter here was line-based and JSON
+# arrives as one line.
+#
+#   `contains` and `sample` both work line by line. A JSON API answer has one
+#   line. So on JSON they do not narrow anything — `contains` either keeps the
+#   whole document or throws it away, and `sample` is a no-op. Nothing said so.
+#   The failure is silent and it looks like an answer.
+#
+#   Measured: asking api.github.com for two repositories and two issue searches
+#   with bytes=4000 returned four bodies whose first 4000 characters were almost
+#   entirely the `*_url` templates GitHub puts at the top of every object. Not
+#   one of `stargazers_count`, `subscribers_count`, or any search result title
+#   was inside the window. The window was spent on boilerplate, and the only way
+#   to reach a field was to guess an `offset` into somebody else's serialiser.
+#
+#   This workflow's own header already names the disease twice: "The tool was
+#   shaping the questions being asked, which is the wrong way round." It said it
+#   about page size in session 11 and about `offset` in session 36. This is the
+#   same sentence a third time, about structure instead of length.
+#
+#   `json` takes dotted paths — `stargazers_count`, `items[].title`,
+#   `items[0].user.login` — and prints one `path = value` line per match, so
+#   every line-based filter downstream starts working again. If the body is not
+#   JSON, it says so and falls through to the old behaviour rather than printing
+#   nothing.
+#
+#   Still GET, still https, still no credentials, still manual dispatch, still
+#   the same bytes fetched. It selects from an answer already in hand.
 
 name: read one page from the CI runner
 
@@ -139,6 +168,10 @@ on:
         description: "the Accept header to send (content negotiation, e.g. application/json)"
         required: false
         default: "*/*"
+      json:
+        description: "dotted paths to pull out of a JSON body, comma-separated (e.g. total_count,items[].title). Empty = print the body"
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -157,9 +190,10 @@ jobs:
           CONTAINS: ${{ inputs.contains }}
           SAMPLE: ${{ inputs.sample }}
           ACCEPT: ${{ inputs.accept }}
+          JSON_PATHS: ${{ inputs.json }}
         run: |
           python3 - <<'PY'
-          import gzip, io, os, re, sys, time, urllib.request, urllib.error
+          import gzip, io, json as jsonlib, os, re, sys, time, urllib.request, urllib.error
 
           raw = os.environ["TARGET_URL"]
           urls = [u for u in re.split(r"[\s,]+", raw) if u]
@@ -185,6 +219,44 @@ jobs:
           accept = (os.environ.get("ACCEPT") or "*/*").strip() or "*/*"
           if "\n" in accept or "\r" in accept:
               sys.exit("refusing: newline in Accept")
+          json_paths = [p.strip() for p in (os.environ.get("JSON_PATHS") or "").split(",") if p.strip()]
+
+          # Walk a dotted path. "a.b" descends, "a[]" iterates every element of a
+          # list, "a[2]" takes one. Anything that does not match yields nothing
+          # rather than an exception, because a path that is absent from THIS
+          # answer is an answer too, and the next URL in the batch still has to
+          # run. Missing paths are reported by name below, so "no line printed"
+          # is never left to mean "the field is empty".
+          def walk(node, parts):
+              if not parts:
+                  yield node
+                  return
+              head, rest = parts[0], parts[1:]
+              m = re.fullmatch(r"([^\[\]]*)(?:\[(-?\d+|)\])?", head)
+              if not m:
+                  return
+              key, idx = m.group(1), m.group(2)
+              if key:
+                  if not isinstance(node, dict) or key not in node:
+                      return
+                  node = node[key]
+              if idx is None:
+                  yield from walk(node, rest)
+                  return
+              if not isinstance(node, list):
+                  return
+              if idx == "":
+                  for item in node:
+                      yield from walk(item, rest)
+              else:
+                  i = int(idx)
+                  if -len(node) <= i < len(node):
+                      yield from walk(node[i], rest)
+
+          def render(value):
+              if isinstance(value, (dict, list)):
+                  return jsonlib.dumps(value, ensure_ascii=False, separators=(",", ":"))
+              return "" if value is None else str(value)
 
           # Read the body whole before stripping. Cutting first used to leave an
           # unclosed <script>, which the stripper cannot match, so the bundle came
@@ -251,6 +323,31 @@ jobs:
                       print("(gzip: failed to decompress: %s)" % e)
 
               text = body.decode("utf-8", "replace")
+
+              # Selecting fields comes before text_only and before the line
+              # filters, so that `contains` and `sample` have lines to work on.
+              # A body that is not JSON falls through to the old behaviour with
+              # the reason printed: the point of this input is to stop the tool
+              # shaping the question, and silently printing nothing would shape
+              # it harder than the truncation it replaces.
+              if json_paths:
+                  try:
+                      doc = jsonlib.loads(text)
+                  except Exception as e:
+                      print("(json: body is not JSON (%s); printing it instead)" % type(e).__name__)
+                  else:
+                      picked, missing = [], []
+                      for path in json_paths:
+                          parts = path.split(".")
+                          hits = [render(v) for v in walk(doc, parts)]
+                          if hits:
+                              picked.extend("%s = %s" % (path, h) for h in hits)
+                          else:
+                              missing.append(path)
+                      if missing:
+                          print("(json: no match for %s)" % ", ".join(missing))
+                      text = "\n".join(picked)
+
               if text_only:
                   text = to_text(text)
 
