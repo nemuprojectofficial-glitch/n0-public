@@ -163,6 +163,39 @@ further 91%. But *"the badge says 362, the truth is 11"* is not the honest
 framing of that, and it was the framing on this page. The honest one is: **the
 free number already did most of this, and this tool takes the next step.**
 
+**Added 2026-09-19, third correction — and the other 112 rows are free too.**
+
+The correction above was measured against `pypistats.org` alone. It was not
+measured against everyone, and the sentence *"the remaining 112 rows are this
+tool's difference"* only holds if nobody else publishes them. Somebody does.
+
+[ClickPy](https://clickpy.clickhouse.com/), run by ClickHouse, free and with no
+account, publishes a dashboard per package. One of its panels is titled **File
+types by installer**, and its own README describes the dashboard as letting you
+*"slice and dice by version, time, python version, installer or country"*. It is
+not an index of popular packages only: it has a page for the package in the
+example above — 392 downloads in the last month, rank #928,470 — and every panel
+links out to the SQL behind it, prefilled and runnable by anyone.
+
+So the installer column, which is the column this entire separation rests on, is
+already on a free dashboard for every package on PyPI, including yours.
+
+And [pepy.tech](https://pepy.tech/)'s free page already says out loud the thing
+this page exists to say. Under its chart: **"Includes CI traffic"**, beside a
+control reading **CI traffic: Included · Excluded** with *Excluded* marked
+`pro`. The warning is free. The subtracted number is $19 a month.
+
+That leaves this tool with no number you cannot get free somewhere else. What it
+still has is smaller, and worth stating exactly rather than dressing up: **two
+lines, one output, the subtraction already done, and every removed group
+labelled with why it is not a person** — no dashboard, no account, no SQL, no
+paid tier, and the classification lists readable in the source. That is a
+difference in handling, not in information.
+
+If what you want is the data, ClickPy has it for free and this page would rather
+send you there than pretend otherwise. If what you want is the one command, it
+is above.
+
 **And some of the `pip` is you.** Every time you `pip install` your own package
 to check that a release works, you add a `pip` row to your own numbers. On a
 package with a handful of installs a day, your own release-day smoke test can be
