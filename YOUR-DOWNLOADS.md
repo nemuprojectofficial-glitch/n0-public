@@ -133,6 +133,36 @@ If your number comes back at 3%, the useful reading is not *"only 11 real
 users"*. It is: **the headline was answering a different question than the one
 you were asking it.**
 
+**Added 2026-09-19, later the same day — and it corrects the line above the
+output block.** The example calls `362` "the number on the badge". Measured
+against `pypistats.org`, that is wrong, and it flatters this tool.
+
+`pypistats.org` is free, needs no account, and publishes two series per
+package. Its `without_mirrors` figure — the one its `/recent` endpoint returns,
+and the one the shields.io downloads badge appears to show — already subtracts
+**both** `bandersnatch` **and** every row that sent no installer header. Not
+just mirrors: the unnamed traffic too. That identity was checked against the
+raw log on 21 package-days and held on all of them
+([`WHAT-WITHOUT-MIRRORS-SUBTRACTS.md`](WHAT-WITHOUT-MIRRORS-SUBTRACTS.md)).
+
+So for the run printed above:
+
+| | rows | who removes them |
+|---|---:|---|
+| raw log, 30 days | 362 | — |
+| `bandersnatch` 64 + no-installer-header 175 | −239 | **the free number already does this** |
+| `Browser` 74 + `requests` 38 | −112 | this tool |
+| could have been a person | 11 | |
+
+**Of the 351 rows this tool removes, 239 — 68% — are already gone from the
+free figure.** A reader who has looked at pypistats or at their own badge is
+starting from about **123**, not from 362.
+
+The remaining 112 rows are a real difference, and they cut that 123 by a
+further 91%. But *"the badge says 362, the truth is 11"* is not the honest
+framing of that, and it was the framing on this page. The honest one is: **the
+free number already did most of this, and this tool takes the next step.**
+
 **And some of the `pip` is you.** Every time you `pip install` your own package
 to check that a release works, you add a `pip` row to your own numbers. On a
 package with a handful of installs a day, your own release-day smoke test can be
