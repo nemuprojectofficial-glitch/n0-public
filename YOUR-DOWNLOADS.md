@@ -196,6 +196,39 @@ If what you want is the data, ClickPy has it for free and this page would rather
 send you there than pretend otherwise. If what you want is the one command, it
 is above.
 
+**Added 2026-09-19, fourth correction — I measured whether anyone pays for this
+kind of thing, and then stopped treating it as a business.**
+
+The third correction left this tool with one claim: not better data, but less
+handling — two lines instead of a dashboard. The obvious next question is
+whether handling is something people buy. In 86 days of keeping this ledger I
+had never once asked it. Today I registered four predictions, then looked.
+
+- **pepy.tech's pricing page** lists Free \$0, **Pro \$19/mo** (this is where
+  *CI download filtering* lives), Business \$49/mo, VC from \$490/mo. Read in
+  full: no customer count, no company names, no testimonial. Its home page and
+  newsletter page have none either.
+- **Five fixed searches** for anyone other than a vendor saying they pay for
+  PyPI download analytics returned **nothing**. Not "few" — zero pages.
+- **I was wrong that pepy is the only seller.** [pypistats.com](https://pypistats.com/)
+  (not `.org`) sells Pro and Enterprise plans for the same thing, and Apify
+  hosts a shelf of PyPI-download scrapers priced per result
+  (\$0.0085/result on one of them).
+- **That shelf publishes its buyers**, which nobody else in this category does.
+  The one I read: *0 Bookmarked, 2 Total users, 1 Monthly active user, Rating
+  0.0 (0)* — and the nine similar actors listed beside it all show 2 or 3.
+- **Control**, so that "found nothing" means something: the same method, pointed
+  at small developer analytics SaaS, immediately found a person writing that
+  they paid £9/month for Plausible until the bill passed their ad revenue. The
+  method can find payers. Here it found none.
+
+Three or more sellers; buyers countable on one hand where they are counted at
+all. So: **this page is no longer presented as something that could earn money.**
+The tool stays, free, exactly as it is — it answers the question it answers, and
+the measurements above are as true as they were this morning. What is retracted
+is the business around it, and the retraction belongs on the same page that
+carried the claim.
+
 **And some of the `pip` is you.** Every time you `pip install` your own package
 to check that a release works, you add a `pip` row to your own numbers. On a
 package with a handful of installs a day, your own release-day smoke test can be

@@ -538,7 +538,8 @@ def commit_dates(repo):
     return dates
 
 
-def check_ts_not_after_commit(repo, ledger_dir, files, since=None, ack=None):
+def check_ts_not_after_commit(repo, ledger_dir, files, since=None, ack=None,
+                              allow_shallow=False):
     """A ledger row's `ts` says when the thing happened. The commit that first
     carries that row says when it was written down. Writing down comes after
     happening, so `ts` can never be later than its own commit.
@@ -587,12 +588,12 @@ def check_ts_not_after_commit(repo, ledger_dir, files, since=None, ack=None):
     measurement, and a row whose own clock runs ahead of its commit cannot
     establish the ordering it exists to establish.
     """
-    failures = []
+    failures, notes = [], []
     try:
         graph = commit_graph(repo)
         dates = commit_dates(repo)
     except RuntimeError as exc:
-        return [Failure(CHECK_TS_NOT_FUTURE, "(history)", str(exc))]
+        return [Failure(CHECK_TS_NOT_FUTURE, "(history)", str(exc))], notes
 
     revs = []
     for sha, parents in graph:
@@ -662,13 +663,35 @@ def check_ts_not_after_commit(repo, ledger_dir, files, since=None, ack=None):
     # failure. Without this the list only ever grows, and a list that can grow
     # without being read is the same shape as no list.
     if ack:
-        for where, hit in sorted(ack.items()):
-            if not hit:
+        # Session 86: a shallow clone cannot see the commit that first carried an
+        # old row, so an acknowledgement of that row can never be matched here and
+        # is reported as stale — which failed this repository's own publish gate on
+        # five rows that are genuine, permanent violations. The list did not rot;
+        # the history under it was cut off. So: when the clone is shallow and the
+        # caller has already accepted that (--allow-shallow, exactly as check 1
+        # does), an unmatched acknowledgement is *reported* rather than failed.
+        #
+        # It is never silent. Every unmatched name is still printed, with the
+        # reason, so "could not be checked here" can never be read as "checked and
+        # fine". The real enforcement stays where check 1's does: CI, with the
+        # whole history and no --allow-shallow, where a stale acknowledgement is
+        # still a failure.
+        unmatched = sorted(where for where, hit in ack.items() if not hit)
+        excused = allow_shallow and is_shallow(repo)
+        for where in unmatched:
+            if excused:
+                notes.append(Failure(
+                    CHECK_TS_NOT_FUTURE, where,
+                    "acknowledged as a known future-stamped row; this clone is shallow, "
+                    "so the commit that first carried it is not here and the "
+                    "acknowledgement can be neither matched nor retired. "
+                    "(--allow-shallow: reported, not enforced)"))
+            else:
                 failures.append(Failure(
                     CHECK_TS_NOT_FUTURE, where,
                     "acknowledged as a known future-stamped row, but no such violation "
                     "is there. A stale acknowledgement hides the next real one — remove it."))
-    return failures
+    return failures, notes
 
 
 # --- driver --------------------------------------------------------------------
@@ -816,7 +839,12 @@ def main(argv=None):
     failures += check_decision_provenance(root, args.ledger, provenance_since)
     if history_available:
         ts_ack = {e.strip(): False for e in args.ts_ack.split(",") if e.strip()}
-        failures += check_ts_not_after_commit(root, args.ledger, present, ts_since, ts_ack)
+        ts_failures, ts_notes = check_ts_not_after_commit(
+            root, args.ledger, present, ts_since, ts_ack, args.allow_shallow)
+        failures += ts_failures
+        if not args.as_json:
+            for note in ts_notes:
+                print("note  {}\n      {}".format(note.where, note.detail))
 
     by_check = {}
     for failure in failures:

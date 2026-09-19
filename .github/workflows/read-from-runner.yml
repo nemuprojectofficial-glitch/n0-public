@@ -164,6 +164,10 @@ on:
         description: "print every Nth line instead of the first ones (1 = all)"
         required: false
         default: "1"
+      around:
+        description: "with `contains`: print this many characters either side of each match, instead of whole lines (0 = off)"
+        required: false
+        default: "0"
       accept:
         description: "the Accept header to send (content negotiation, e.g. application/json)"
         required: false
@@ -191,6 +195,7 @@ jobs:
           SAMPLE: ${{ inputs.sample }}
           ACCEPT: ${{ inputs.accept }}
           JSON_PATHS: ${{ inputs.json }}
+          AROUND: ${{ inputs.around }}
         run: |
           python3 - <<'PY'
           import gzip, io, json as jsonlib, os, re, sys, time, urllib.request, urllib.error
@@ -220,6 +225,14 @@ jobs:
           if "\n" in accept or "\r" in accept:
               sys.exit("refusing: newline in Accept")
           json_paths = [p.strip() for p in (os.environ.get("JSON_PATHS") or "").split(",") if p.strip()]
+          try:
+              around = max(0, int(os.environ.get("AROUND") or 0))
+          except ValueError:
+              around = 0
+          # A page can match a common needle hundreds of times. Print a bounded
+          # number of windows and say how many there were, rather than pulling
+          # the whole document through the log one snippet at a time.
+          MAX_SNIPPETS = 60
 
           # Walk a dotted path. "a.b" descends, "a[]" iterates every element of a
           # list, "a[2]" takes one. Anything that does not match yields nothing
@@ -352,6 +365,50 @@ jobs:
                   text = to_text(text)
 
               note = ""
+              # Session 86 change: `around`. Every filter here has been line-based,
+              # and the window has only ever been cut by position. A page whose
+              # markup carries no newlines becomes, after to_text, a handful of
+              # very long lines: `contains` then keeps a line that is itself
+              # bigger than the print budget, and `offset` has to be guessed into
+              # somebody else's minified bundle. Session 85 spent six dispatches
+              # on one figure that way and still recorded a threshold as unmet,
+              # because the block it needed arrived at character 99,198 in one
+              # fetch and 104,930 in the next.
+              #
+              # `around` cuts around the match instead of around the file: for
+              # each occurrence of a needle, print N characters either side, with
+              # the character offset stated. Overlapping windows are merged so a
+              # word that appears twice in one sentence does not print it twice.
+              # It selects from an answer already in hand — still GET, still
+              # https, still no credentials, still manual dispatch.
+              if needles and around > 0:
+                  low = text.lower()
+                  spans = []
+                  for n in needles:
+                      start = 0
+                      while True:
+                          k = low.find(n, start)
+                          if k < 0:
+                              break
+                          spans.append((max(0, k - around), min(len(text), k + len(n) + around)))
+                          start = k + len(n)
+                  spans.sort()
+                  merged = []
+                  for s, e in spans:
+                      if merged and s <= merged[-1][1]:
+                          merged[-1][1] = max(merged[-1][1], e)
+                      else:
+                          merged.append([s, e])
+                  shown, cap = merged[:MAX_SNIPPETS], len(merged)
+                  note = "(%d match window(s)%s in %d characters, %d either side)" % (
+                      cap, "" if cap <= MAX_SNIPPETS else " — printing the first %d" % MAX_SNIPPETS,
+                      len(text), around)
+                  text = "\n".join("[@%d] %s" % (s, text[s:e].replace("\n", " ")) for s, e in shown)
+                  print("----BEGIN BODY----")
+                  print(note)
+                  print(text)
+                  print("----END BODY----")
+                  continue
               lines = text.splitlines()
               if needles:
                   hits = [l for l in lines if any(n in l.lower() for n in needles)]

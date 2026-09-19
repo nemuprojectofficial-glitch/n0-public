@@ -401,6 +401,61 @@ def case_shallow_clone():
         shutil.rmtree(clone, ignore_errors=True)
 
 
+def case_shallow_stale_ack():
+    """Session 86. A --ts-ack entry cannot be matched in a clone whose history is cut.
+
+    Check 6 finds a violation by looking at the commit that *first carried* the
+    row. In a shallow clone that commit may be gone, so an acknowledgement of a
+    genuine, permanent violation looks stale — and this repository's own publish
+    gate failed on five such entries, all of them real. The list had not rotted;
+    the history under it had been cut off.
+
+    Three assertions, because any one of them alone would let a wrong fix through:
+      * shallow + --allow-shallow: the unmatched entry does not fail the check
+        (and is still printed — the caller sees "note", never silence);
+      * shallow without --allow-shallow: it still fails, because that is the
+        configuration CI runs;
+      * deep + --allow-shallow: it still fails, because the excuse must attach to
+        the truncated history, not to the flag being present.
+    """
+    source = make_repo(CLEAN)
+    clone = tempfile.mkdtemp(prefix="ledger-selftest-stale-ack-")
+    shutil.rmtree(clone, ignore_errors=True)
+    stale = "audit/external.jsonl line 99"
+    try:
+        rows = deep_copy(CLEAN)
+        rows["external.jsonl"].append(dict(rows["external.jsonl"][-1], ts="2026-02-02T00:00:00Z"))
+        write_ledger(source, rows)
+        git(source, "commit", "-qam", "a later append")
+        code, _ = run("git", "clone", "-q", "--depth", "1", "file://" + source, clone)
+        if code != 0:
+            return "a stale ack in a shallow clone: could not create the shallow clone"
+
+        def fired(repo, *extra):
+            _, out = run(sys.executable, VERIFY, "--repo", repo, "--ledger", "audit",
+                         "--initial-balance", "1000", "--now", NOW_BEFORE_DEADLINE,
+                         "--json", "--ts-ack", stale, *extra)
+            return {f["check"] for f in json.loads(out)["failures"]}
+
+        shallow_allowed = fired(clone, "--allow-shallow")
+        shallow_strict = fired(clone)
+        deep_allowed = fired(source, "--allow-shallow")
+
+        ok = ("row_ts_not_after_commit" not in shallow_allowed
+              and "row_ts_not_after_commit" in shallow_strict
+              and "row_ts_not_after_commit" in deep_allowed)
+        detail = ("expected the unmatched ack to be excused only when the clone is "
+                  "shallow AND --allow-shallow is given (shallow+allowed={}, "
+                  "shallow+strict={}, deep+allowed={})".format(
+                      sorted(shallow_allowed), sorted(shallow_strict), sorted(deep_allowed)))
+        title = "a stale ack is excused only by a cut history, not by the flag"
+        print("{}  {}".format("ok  " if ok else "FAIL", title))
+        return None if ok else title + ": " + detail
+    finally:
+        shutil.rmtree(source, ignore_errors=True)
+        shutil.rmtree(clone, ignore_errors=True)
+
+
 def case_history_ack():
     """--history-ack must excuse exactly the break it names, and nothing else.
 
@@ -520,7 +575,7 @@ def main():
             shutil.rmtree(repo, ignore_errors=True)
 
     for extra_case in (case_merge_keeping_everything, case_merge_dropping_a_line, case_no_history,
-                       case_shallow_clone, case_history_ack):
+                       case_shallow_clone, case_shallow_stale_ack, case_history_ack):
         extra = extra_case()
         if extra:
             failures.append(extra)
@@ -533,7 +588,7 @@ def main():
         return 1
     print("verify.py handles all {} cases.".format(
         len(CASES) + len(CASES_WITH_CUTOFF) + len(CASES_WITH_TS_CUTOFF)
-        + len(CASES_WITH_TS_ACK) + 5))
+        + len(CASES_WITH_TS_ACK) + 6))
     return 0
 
 
