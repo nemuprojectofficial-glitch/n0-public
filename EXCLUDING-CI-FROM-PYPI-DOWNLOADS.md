@@ -154,6 +154,44 @@ CI traffic*.
 
 ---
 
+## Who asked for this, and when
+
+Not a market estimate. These are the public threads, with their dates, read
+from the GitHub API on 2026-09-19.
+
+On **2024-08-27**, eight minutes apart, one person filed the same request in
+two places:
+
+| | filed | state on 2026-09-19 |
+|---|---|---|
+| [`psf/pypistats.org#73`](https://github.com/psf/pypistats.org/issues/73) — *Use new PyPI attribute to detect CI downloads* | 15:19:40Z | **open**, 0 comments, 5 reactions |
+| [`psincraian/pepy#693`](https://github.com/psincraian/pepy/issues/693) — *…differentiate CI downloads from direct user downloads* | 15:27:07Z | **closed 2024-12-03**, 2 comments |
+
+Both bodies point at the same upstream work — [`pypa/pip#5499`](https://github.com/pypa/pip/issues/5499),
+[`pypi/linehaul-cloud-function#9`](https://github.com/pypi/linehaul-cloud-function/issues/9),
+and [`ofek/pypinfo#157`](https://github.com/ofek/pypinfo/pull/157), which is
+where the same request from [2017](https://github.com/ofek/pypinfo/issues/4)
+finally landed.
+
+It is still being asked by people who do not know any of the above exists:
+
+* [`zenml-io/kitaru#985`](https://github.com/zenml-io/kitaru/issues/985)
+  (2026-09-04) — *Stop CI from installing kitaru from PyPI (skews download
+  stats)*. The fix was to change their own CI, because the measurement could
+  not be changed.
+* [`cubrid-lab/.github#39`](https://github.com/cubrid-lab/.github/issues/39)
+  (2026-09-12, open) — a maintainer preparing a presentation, worried a
+  reviewer will say *"isn't that just your CI?"*, planning to reconstruct the
+  split by excluding GitHub Actions IP ranges in BigQuery.
+
+That last one is the point of this page. The `ci` field would have answered it
+directly, for free, in one query.
+
+The whole thing is small: across all of GitHub, four issues have *pypi*,
+*downloads* and *CI* in the title.
+
+---
+
 ## On paid services
 
 Hosted services charge for this, and a subscription buys real things a SQL

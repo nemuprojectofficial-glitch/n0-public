@@ -195,6 +195,46 @@ The rules that follow from the measurements above:
    only ever runs downward, so `0` is the value most likely to be a truncation
    and least likely to look like one.
 
+### Rule 3, measured, 2026-09-19
+
+The truncated answer is not always a zero, and not always obviously small. One
+`GET`, three tables, no `read_overflow_mode`:
+
+```sql
+SELECT 'per_day',      max(date) FROM pypi.pypi_downloads_per_day
+UNION ALL SELECT 'by_installer', max(date) FROM pypi.pypi_downloads_per_day_by_version_by_installer_by_type
+UNION ALL SELECT 'by_country',   max(date) FROM pypi.pypi_downloads_per_day_by_version_by_installer_by_type_by_country
+```
+
+```
+per_day        2026-09-18
+by_installer   2026-09-01     <- 17 days behind
+by_country     2026-09-15     <-  3 days behind
+```
+
+HTTP 200. No warning. It reads exactly like a partially stalled pipeline, and
+that is a thing this dataset really does — see
+[`ClickHouse/clickpy#241`](https://github.com/ClickHouse/clickpy/issues/241),
+where `pypi_downloads_per_day` was genuinely frozen for four days in July 2026,
+and #225 before it.
+
+Asked the two ways this page recommends, in the same minute:
+
+```sql
+-- allowed to fail
+SELECT max(date) FROM pypi.pypi_downloads_per_day_by_version_by_installer_by_type
+-- HTTP 500, Code 158: max rows 1.00 billion, current rows 10.18 billion
+
+-- filtered on the sorting key
+SELECT max(date) FROM pypi.pypi_downloads_per_day_by_version_by_installer_by_type
+ WHERE project = 'pypistats'
+-- 2026-09-18
+```
+
+All six table/project combinations, asked on the key, return **2026-09-18**.
+Nothing was behind. A believable wrong answer is worse than a zero, because a
+zero at least looks like nothing, and `2026-09-01` looks like a finding.
+
 ---
 
 ## Reproduce it
