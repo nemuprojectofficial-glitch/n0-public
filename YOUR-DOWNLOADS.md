@@ -110,6 +110,25 @@ Two honest limits on the second cut, both printed by the tool:
   silently truncated scan — and the tool prints the refusal rather than leaving
   the line out, because a missing CI figure reads as "no CI here".
 
+**Added later the same day — a third limit, bigger than the other two.**
+`ci = false` does not mean "not CI". It means *nothing said CI*. A mirror, a
+browser, a bare HTTP client and an empty installer header all land in `false`,
+and none of them has any concept of a CI environment to report. The enum has a
+third value, `unknown`, for exactly that case, and across every window measured
+here it is used **zero times** — so one value is carrying two meanings, and the
+larger one is absence. This does not change the split this tool prints (the CI
+cut is only ever applied to the person-possible side, which mirrors and
+browsers have already been removed from), but it does mean the phrase "did not
+declare CI" should be read literally, and never as "was a person".
+
+And **for a small package, CI is usually not what is inflating your number.**
+Twenty packages drawn deterministically from the 10,000–1,000,000 all-time band
+(not hand-picked: `ORDER BY cityHash64(project) LIMIT 20`) produced 4,138
+downloads over fourteen days, of which `bandersnatch` was 49.0%, unattributed
+traffic 29.8%, and `pip` 16.7% — with **`ci = true` appearing zero times in all
+twenty**. The working is in
+[EXCLUDING-CI-FROM-PYPI-DOWNLOADS.md](EXCLUDING-CI-FROM-PYPI-DOWNLOADS.md).
+
 If your number comes back at 3%, the useful reading is not *"only 11 real
 users"*. It is: **the headline was answering a different question than the one
 you were asking it.**

@@ -192,6 +192,66 @@ The whole thing is small: across all of GitHub, four issues have *pypi*,
 
 ---
 
+## Added 2026-09-19, later the same day: who this field does *not* help
+
+The page above measures the field on packages that have CI traffic. The
+obvious next question — *how many packages does this actually matter for* —
+turns out to have an unobvious answer, so it is here rather than left implied.
+
+**Twenty packages, not chosen by hand.** The sample is
+`ORDER BY cityHash64(project) LIMIT 20` over every PyPI project whose all-time
+download count is between 10,000 and 1,000,000. That ordering is deterministic
+and reproducible, and it is not something the author of this page can steer
+toward a flattering result. Window: 2026-09-05 to 2026-09-18, fourteen days,
+4,138 downloads in total.
+
+```sql
+SELECT installer, ci, count() AS n
+FROM pypi.pypi
+WHERE project IN ( …the twenty… )
+  AND date >= toDate('2026-09-05') AND date <= toDate('2026-09-18')
+GROUP BY installer, ci ORDER BY n DESC
+```
+
+| installer | `ci` | rows | share |
+|---|---|---:|---:|
+| `bandersnatch` | `false` | 2,026 | 49.0% |
+| *(empty)* | `false` | 1,233 | 29.8% |
+| `pip` | `false` | 690 | 16.7% |
+| `Browser` | `false` | 184 | 4.4% |
+| `devpi` / `uv` / `poetry` / `requests` | `false` | 5 | 0.1% |
+
+**`ci = true` appears zero times. So does `ci = unknown`.** Across all twenty
+packages, in fourteen days, every single row is `false`.
+
+That is not the tool failing. The same query shape, same window, same endpoint,
+returns `ci = true` for 13,800 of `pypistats`' 34,077 rows (40.5%) and 1,685 of
+`pycubrid`'s 2,618 (64.4%). The zeros are real.
+
+**Two things follow, and the second is the one worth carrying away.**
+
+**1. `ci = false` does not mean "not CI". It means "nothing said CI".** A
+mirror, a browser, a bare HTTP client and an empty installer header all land in
+`false` — none of them has any concept of a CI environment to report. The enum
+has a third value, `unknown`, for exactly this case, and in every window
+measured here it is used zero times. One value is carrying two meanings, and
+the larger one is *absence*.
+
+**2. At the small end of PyPI, CI is not what is inflating your number.**
+For these twenty packages the single largest source is `bandersnatch` — the
+declared full mirror that downloads everything ever published, forever, on a
+schedule — at 49.0%, with unattributed traffic second at 29.8%. `pip` is
+16.7% of the total, and none of it declared CI. **A CI filter applied to these
+packages would remove nothing at all.**
+
+So if your package is in that band and your number looks impossible, the field
+on this page is probably not your answer. The installer column is, and it is
+one `GROUP BY` away on the same free endpoint. This page is about a real field
+that a real paid feature is built on; it is not a claim that the field is what
+most packages are suffering from.
+
+---
+
 ## On paid services
 
 Hosted services charge for this, and a subscription buys real things a SQL
