@@ -54,7 +54,7 @@ def _bar(fraction, width=28):
     return "#" * filled + "." * (width - filled)
 
 
-def report(project, rows, days, out=sys.stdout):
+def report(project, rows, days, ci_rows=None, ci_error=None, out=sys.stdout):
     """Lay out one package's split. Pure formatting — no network, no judgement.
 
     `rows` is what reach_probe.by_day returns: dicts with installer and count.
@@ -117,10 +117,54 @@ def report(project, rows, days, out=sys.stdout):
     else:
         w("  {:.0f}% could have been a person, which is high for this dataset.\n"
           .format(pct))
-    w("  'Could have been' is the honest ceiling, not an estimate of humans:\n"
-      "  CI runners, Docker builds and dependency bots all drive pip too, and\n"
-      "  the installer field cannot tell you which of those you are looking at.\n"
-      "  The number it replaces was the ceiling on the ceiling.\n\n")
+    w("  'Could have been' is the honest ceiling, not an estimate of humans.\n\n")
+
+    # Second cut: the log's own CI flag. Until 2026-09-19 this tool stopped at
+    # the line above and said, in as many words, that the pip figure could not
+    # be split further. It can. The paragraph that said otherwise was wrong,
+    # and it was wrong for every reader who ran this before that date.
+    w("  " + "-" * 62 + "\n")
+    if ci_error:
+        w("  CI split: not available for this package.\n\n")
+        w("    {}\n\n".format(ci_error))
+        w("  The download log carries a `ci` flag, but only on its event-level\n"
+          "  table — one row per download. For a large package over a long\n"
+          "  window that scan exceeds the endpoint's read limit and is refused\n"
+          "  outright, which is the safe outcome: a truncated scan would have\n"
+          "  quietly under-counted instead. Try a shorter --days.\n\n"
+          "  This line is printed rather than skipped on purpose. A missing\n"
+          "  CI figure that is not explained reads as 'no CI here'.\n\n")
+    elif ci_rows is not None:
+        c = reach_probe.classify_ci(ci_rows)
+        total = c["person_possible_total"]
+        if total == 0:
+            w("  CI split: the event-level table returned no person-possible\n"
+              "  rows for this window, so there is nothing to split.\n\n")
+        else:
+            share = 100.0 * c["declared_ci"] / total
+            w("  Of the {} that could have been a person, the log says:\n\n"
+              .format(_fmt(total)))
+            w("    declared CI          {:>12}   {:>5.1f}%\n"
+              .format(_fmt(c["declared_ci"]), share))
+            w("    did not declare CI   {:>12}   {:>5.1f}%\n"
+              .format(_fmt(c["not_ci"]), 100.0 * c["not_ci"] / total))
+            if c["ci_unknown"]:
+                w("    unclassified         {:>12}   {:>5.1f}%\n"
+                  .format(_fmt(c["ci_unknown"]), 100.0 * c["ci_unknown"] / total))
+            w("\n")
+            remaining = c["not_ci"] + c["ci_unknown"]
+            if c["declared_ci"]:
+                w("  So the person-possible figure above is at most {}, not {}.\n"
+                  .format(_fmt(remaining), _fmt(person)))
+            else:
+                w("  Nothing in this window declared itself CI, so the figure\n"
+                  "  above does not move. That is an answer, not a missing one.\n")
+            w("  'Did not declare CI' is still a ceiling, not a headcount:\n"
+              "  a Docker build or a dependency bot that sets no CI variable\n"
+              "  lands in it. It is a lower ceiling than the one above, which\n"
+              "  is the whole of what this line claims.\n\n")
+    else:
+        w("  CI split: not requested.\n\n")
     return split
 
 
@@ -147,6 +191,19 @@ DEMO_ROWS = [
     {"date": "2026-09-15", "installer": "requests",     "count": "3"},
 ]
 
+# The CI half of the same demo, measured 2026-09-19 from pypi.pypi for the same
+# package. The window there is 2026-09-11..17 rather than ..15, which for this
+# package makes no difference to the person-possible side: pip is 11 in both.
+# Stated rather than quietly relied on, because "the windows are the same" is
+# the kind of thing that stops being true without anyone noticing.
+DEMO_CI_ROWS = [
+    {"installer": "",             "ci": "false", "count": "179"},
+    {"installer": "Browser",      "ci": "false", "count": "79"},
+    {"installer": "bandersnatch", "ci": "false", "count": "72"},
+    {"installer": "requests",     "ci": "false", "count": "38"},
+    {"installer": "pip",          "ci": "false", "count": "11"},
+]
+
 
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
@@ -166,10 +223,15 @@ def main(argv=None):
         return 0
 
     if argv[0] == "--demo":
-        report("agent-audit-ledger", DEMO_ROWS, 5)
+        report("agent-audit-ledger", DEMO_ROWS, 5, ci_rows=DEMO_CI_ROWS)
         sys.stdout.write(
-            "  (--demo replays rows measured on 2026-09-16. No network was\n"
-            "   used. Run it against your own package for a live answer.)\n\n")
+            "  (--demo replays rows measured on 2026-09-16, and a CI split\n"
+            "   measured on 2026-09-19. No network was used. Run it against\n"
+            "   your own package for a live answer.)\n\n"
+            "  This package happens to have no declared-CI traffic, which is\n"
+            "  why that block does not move the number. It is not always so\n"
+            "  quiet: over the same week, 6,008 of pypistats' own 16,548\n"
+            "  person-possible downloads — 36% — declared themselves CI.\n\n")
         return 0
 
     project = argv[0]
@@ -240,7 +302,12 @@ def main(argv=None):
             .format(project, since, asked, days, asked))
         return 0
 
-    report(asked, rows, days)
+    # The CI split is asked for separately because it can legitimately fail
+    # while the figures above are fine — see reach_probe.by_installer_and_ci.
+    # A failure here must not take the rest of the answer down with it, and
+    # must not be swallowed either; report() prints whichever happened.
+    ci_rows, ci_err = reach_probe.by_installer_and_ci(project, since=since)
+    report(asked, rows, days, ci_rows=None if ci_err else ci_rows, ci_error=ci_err)
     sys.stdout.write(
         "  window: {} to {} (the log's newest day, not today)\n"
         "  source: PyPI's public download log, read through ClickHouse's free\n"

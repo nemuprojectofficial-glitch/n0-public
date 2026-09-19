@@ -145,6 +145,9 @@ ENDPOINT = "https://sql-clickhouse.clickhouse.com/"
 ROLE = "demo"            # ClickHouse's published read-only demo role, not a credential
 TABLE = "pypi.pypi_downloads_per_day_by_version_by_installer_by_type"
 TABLE_COUNTRY = TABLE + "_by_country"
+# The event-level table the per-day views above are built from. It is the only
+# one that still carries `ci`; see by_installer_and_ci for what that costs.
+TABLE_RAW = "pypi.pypi"
 DAILY = "pypi.pypi_downloads_per_day"
 
 # A project whose downloads are counted in the tens of millions per day. It is
@@ -399,6 +402,82 @@ def by_day(project, since=None, fetch=ask):
         .format(TABLE, where))
 
 
+def by_installer_and_ci(project, since=None, fetch=ask):
+    """The same window, split by installer *and* by the log's own `ci` flag.
+
+    Why this is a separate call and not an extra column on by_day
+    ------------------------------------------------------------
+    `installer` alone cannot tell a laptop from a GitHub Actions runner: both
+    of them run pip, and this file has said so, out loud, in its own output,
+    since it was first published. What it did not say — because nobody here
+    had run DESCRIBE — is that the dataset answers the question anyway.
+
+        pypi.pypi       ci  Enum8('false' = 0, 'true' = 1, 'unknown' = 2)
+        pypi.pypi_raw   ci  Nullable(Bool)
+
+    The per-day tables this file has been reading all along are materialized
+    views that aggregate `ci` away. The flag is in the event-level table, on
+    the same free endpoint, under the same demo role. Measured 2026-09-19.
+
+    The cost is real, and it is why this is optional rather than merged into
+    the main query: `pypi.pypi` is one row per download, so a large project
+    over a long window exceeds the endpoint's billion-row read limit and comes
+    back as Code 158 (`requests` over 30 days: 1.39 billion rows, measured).
+    That is the *good* failure — `read_overflow_mode=throw` is what turns a
+    silently truncated scan into an error — but it means this split is
+    available for small and medium projects and not for the largest ones.
+    Callers must print which of the two happened. A missing CI line that is
+    not explained reads as "no CI here", which is the same lie by omission
+    this whole file exists to avoid.
+    """
+    where = "project = {}".format(sql_literal(normalize(project)))
+    if since:
+        where += " AND date >= toDate({})".format(sql_literal(since))
+    return fetch(
+        "SELECT date AS date, installer AS installer, ci AS ci, "
+        "count() AS count FROM {} WHERE {} GROUP BY date, installer, ci "
+        "ORDER BY date ASC, count DESC LIMIT 1000".format(TABLE_RAW, where))
+
+
+def classify_ci(rows):
+    """Split the person-possible side again, by the log's declared CI flag.
+
+    Returns counts for the person-possible installers only. The robot side is
+    already excluded for reasons that have nothing to do with CI, and folding
+    the two classifications together would make it impossible to say which
+    judgement removed which download.
+
+    `ci` arrives as the string 'true' / 'false' / 'unknown'. Anything else is
+    counted as unknown rather than guessed, and `unknown` is never added to
+    either side — a download the log did not classify is not evidence of a
+    person and not evidence of a runner.
+    """
+    declared_ci, not_ci, unknown, unparsed = 0, 0, 0, []
+    for row in rows:
+        inst = row.get("installer") or ""
+        if inst not in PERSON_POSSIBLE:
+            continue
+        try:
+            n = int(row.get("count"))
+        except (TypeError, ValueError):
+            unparsed.append(row)
+            continue
+        flag = str(row.get("ci", "unknown")).lower()
+        if flag in ("true", "1"):
+            declared_ci += n
+        elif flag in ("false", "0"):
+            not_ci += n
+        else:
+            unknown += n
+    return {
+        "declared_ci": declared_ci,
+        "not_ci": not_ci,
+        "ci_unknown": unknown,
+        "person_possible_total": declared_ci + not_ci + unknown,
+        "unparsed": unparsed,
+    }
+
+
 def by_country(project, since=None, fetch=ask):
     where = "project = {}".format(sql_literal(normalize(project)))
     if since:
@@ -542,6 +621,51 @@ def selftest():
     check("the normalized name is what reaches the WHERE clause",
           len(captured) == 2 and
           all("'django'" in s and "'Django'" not in s for s in captured))
+
+    # 9. ★ The CI flag (added 2026-09-19). For eighty sessions this file told
+    #    its readers, in its own printed output, that the pip figure could not
+    #    be split into people and runners. It could: `ci` is a column on
+    #    pypi.pypi, free, on the endpoint already being queried. These checks
+    #    are the shape of what was missing.
+    ci_rows = [
+        {"installer": "uv",           "ci": "false", "count": "1839"},
+        {"installer": "uv",           "ci": "true",  "count": "1201"},
+        {"installer": "pip",          "ci": "false", "count": "214"},
+        {"installer": "pip",          "ci": "true",  "count": "178"},
+        {"installer": "poetry",       "ci": "false", "count": "31"},
+        {"installer": "bandersnatch", "ci": "false", "count": "1"},
+        {"installer": "Browser",      "ci": "false", "count": "6"},
+        {"installer": "conda",        "ci": "unknown", "count": "5"},
+    ]
+    cs = classify_ci(ci_rows)
+    #    These are the rows the endpoint actually returned for `pypistats` on
+    #    2026-09-17, plus one synthetic 'unknown'. 1379 of 3468 person-possible
+    #    downloads that day declared themselves CI.
+    check("the declared-CI share is separated from the rest",
+          cs["declared_ci"] == 1379 and cs["not_ci"] == 2084 and
+          cs["ci_unknown"] == 5)
+    #    The robot side must not leak in. bandersnatch and Browser are excluded
+    #    for reasons that predate and are independent of the CI flag; adding
+    #    them here would double-count one download against two judgements.
+    check("the not-a-person side stays out of the CI split",
+          cs["person_possible_total"] == 1379 + 2084 + 5)
+    #    An unclassified download is not evidence either way. Counting
+    #    'unknown' as not-CI is the flattering error, so it is the one to
+    #    check against.
+    check("ci='unknown' is held apart rather than folded into either side",
+          classify_ci([{"installer": "pip", "ci": "unknown", "count": "9"}])
+          == {"declared_ci": 0, "not_ci": 0, "ci_unknown": 9,
+              "person_possible_total": 9, "unparsed": []})
+    #    And, as with the name: a query that does not select `ci` cannot have
+    #    measured it. This check reads the emitted SQL, so an implementation
+    #    that keeps using the per-day view fails here.
+    captured2 = []
+    by_installer_and_ci("Django", since="2026-09-01",
+                        fetch=lambda sql, timeout=30: (captured2.append(sql), ([], None))[1])
+    check("the CI query asks the event-level table, for the normalized name",
+          len(captured2) == 1 and "pypi.pypi " in captured2[0] + " " and
+          " ci " in captured2[0] and "'django'" in captured2[0] and
+          TABLE not in captured2[0])
 
     print()
     if fails:

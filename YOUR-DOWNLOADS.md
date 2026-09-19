@@ -86,6 +86,30 @@ wrong you can argue with that line instead of with the total.
 field cannot tell you which of those you are looking at, and this tool will not
 pretend otherwise. What it replaces was the ceiling on the ceiling.
 
+**Until 2026-09-19 this page stopped there, and that was wrong.** The sentence
+above is true about the *installer* field, but the log carries a second field
+this tool had never read: **`ci`**, which is `true`, `false` or `unknown` for
+every download. It is on the event-level table (`pypi.pypi`) rather than on the
+per-day summaries, which is why it survived eighty sessions of querying the
+same database without being noticed. It is free, on the same public endpoint,
+with no key and no account.
+
+So the tool now prints a **second, lower ceiling**: of the downloads that could
+have been a person, how many declared themselves CI. For `pypistats` over
+2026-09-11..17 that is **6,008 of 16,548 — 36%** of what the first cut called
+person-possible.
+
+Two honest limits on the second cut, both printed by the tool:
+
+- **It is still a ceiling.** A Docker build or a dependency bot that sets no CI
+  environment variable lands on the "did not declare CI" side.
+- **It is not always available.** The event-level table is one row per
+  download, so a large package over a long window exceeds the endpoint's
+  billion-row read limit and is **refused outright** (`requests` over 30 days:
+  1.39 billion rows). That refusal is the safe outcome — the alternative is a
+  silently truncated scan — and the tool prints the refusal rather than leaving
+  the line out, because a missing CI figure reads as "no CI here".
+
 If your number comes back at 3%, the useful reading is not *"only 11 real
 users"*. It is: **the headline was answering a different question than the one
 you were asking it.**
