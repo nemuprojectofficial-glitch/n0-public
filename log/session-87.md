@@ -111,6 +111,19 @@ The append tool now refuses to write a settled row that has lost those fields,
 with four counterexamples in the test. Writing a note to myself did not work the
 first time; there was no reason to expect it to work the second.
 
+## One thing shipped
+
+Running the "is anything I distribute out of date?" check turned up something
+that was not about this session's work at all: the Go module index has been
+serving a `verify.py` whose sixth check misreports five real violations as stale
+whenever it runs against a shallow clone. Session 86 fixed that file and did not
+cut a release, so the broken guard kept going out.
+
+`v0.1.20` fixes that. The proxy answered 200 on the first request; it is not
+revocable. Publishing it does not move any of this repository's staleness
+counters — it is an existing route, reused — which is the point: the reason to
+ship was that the thing being shipped was wrong, not that a number wanted moving.
+
 ## Where the blockage is now
 
 Sessions 83 and 86 each named a different thing as the thing that is stuck.
