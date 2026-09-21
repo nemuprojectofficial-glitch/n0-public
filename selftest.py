@@ -82,8 +82,11 @@ def make_repo(rows_by_file):
     return repo
 
 
-def verify(repo, now, provenance_since=None, ts_since=None, ts_ack=None, history_ack=None):
+def verify(repo, now, provenance_since=None, ts_since=None, ts_ack=None, history_ack=None,
+           horizon=None):
     extra = ["--provenance-since", provenance_since] if provenance_since else []
+    if horizon:
+        extra += ["--horizon", horizon]
     if ts_since:
         extra += ["--ts-since", ts_since]
     if ts_ack:
@@ -241,6 +244,40 @@ CASES_WITH_TS_ACK = [
 CASES_WITH_TS_CUTOFF = [
     ("a future-stamped row from before check 6's cutoff is left alone",
      case_future_row_before_cutoff, NOW_BEFORE_DEADLINE, "2031-01-01T00:00:00Z"),
+]
+
+# Check 4 with a horizon.
+#
+# ★ Added 2026-09-21 (session 96), after the agent that maintains this file
+# wrote, in a prediction's own `evidence` field, that the measurement had been
+# impossible -- and left `result` unresolved. Check 4 was asked at that moment
+# and passed, because the deadline was three hours out. The ledger was
+# published. The deadline then passed with nobody awake.
+#
+# The check was never wrong. It was asked in the wrong direction: always while
+# someone could act, always about a moment when someone could act.
+#
+# Two other places to put the gate were built and thrown away first, each
+# killed by counting how often it would have fired over this ledger's history:
+# "evidence present but result unresolved" fired on 104 rows (registration
+# rows legitimately carry setup notes in `evidence`), and "deadline before the
+# next wake, judged when the row is written" fired on 70 rows (a prediction
+# registered, measured and settled inside one session legitimately has a
+# deadline before the next wake). The horizon belongs at the moment a run
+# ends, not at the moment a row is written.
+CASES_WITH_HORIZON = [
+    # The real shape: unresolved, deadline still in the future, but before the
+    # next time anyone can act.
+    ("a deadline that will pass unattended before the next run",
+     case_stale_prediction, NOW_BEFORE_DEADLINE, "2026-03-01T00:00:00Z", "predictions_resolved"),
+    # A horizon must not turn a clean ledger dirty just by existing: the clean
+    # fixture's deadline is after this horizon, so nothing fires.
+    ("a horizon short of every deadline leaves a clean ledger clean",
+     case_clean, NOW_BEFORE_DEADLINE, "2026-01-06T00:00:00Z", None),
+    # Without a horizon the same ledger passes. This is the blind spot itself,
+    # kept as a test so it cannot be closed by accident and then reopened.
+    ("without a horizon, the same ledger passes",
+     case_stale_prediction, NOW_BEFORE_DEADLINE, None, None),
 ]
 
 
@@ -556,6 +593,24 @@ def main():
     # The acknowledgement cases override what the mutation would otherwise
     # expect: naming the row is supposed to turn a firing check quiet, and only
     # that row.
+    for title, mutate, now, horizon, expected in CASES_WITH_HORIZON:
+        repo = make_repo(CLEAN)
+        try:
+            mutate(repo)
+            code, result = verify(repo, now, horizon=horizon)
+            fired = {f["check"] for f in result["failures"]}
+            if expected is None:
+                ok = result["ok"] and code == 0
+                detail = "expected a clean pass, got: {}".format(sorted(fired) or "exit %d" % code)
+            else:
+                ok = expected in fired and code == 1
+                detail = "expected {!r} to fire, fired: {}".format(expected, sorted(fired) or "nothing")
+            print("{}  {}".format("ok  " if ok else "FAIL", title))
+            if not ok:
+                failures.append("{}: {}".format(title, detail))
+        finally:
+            shutil.rmtree(repo, ignore_errors=True)
+
     for title, mutate, now, ack, expected in CASES_WITH_TS_ACK:
         repo = make_repo(CLEAN)
         try:
@@ -588,7 +643,7 @@ def main():
         return 1
     print("verify.py handles all {} cases.".format(
         len(CASES) + len(CASES_WITH_CUTOFF) + len(CASES_WITH_TS_CUTOFF)
-        + len(CASES_WITH_TS_ACK) + 6))
+        + len(CASES_WITH_HORIZON) + len(CASES_WITH_TS_ACK) + 6))
     return 0
 
 

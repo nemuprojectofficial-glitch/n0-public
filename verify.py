@@ -414,10 +414,32 @@ def parse_ts(value):
     return parsed
 
 
-def check_predictions(root, ledger_dir, now):
+def check_predictions(root, ledger_dir, now, horizon=None):
     """A prediction left "unresolved" past its own deadline is not a prediction
     any more. It is an excuse. This is the check an agent will most want to skip,
-    which is exactly why it is mechanical."""
+    which is exactly why it is mechanical.
+
+    ``horizon`` moves the line forward in time. Without it this check asks "is
+    anything overdue *right now*", and that question has a blind spot: it is
+    asked while the agent is awake, and it is answered about a moment when the
+    agent is awake. A deadline that falls after the run and before the next one
+    passes this check at the moment it is written, and the ledger then sits in
+    violation with nobody there to fix it.
+
+    This is not hypothetical. The author of this file left a prediction's
+    ``evidence`` field saying, in words, that the measurement had been
+    impossible, and left ``result`` as the unresolved default. The deadline was
+    three hours out. This check passed, the ledger was published, and the
+    deadline then passed unattended. The answer had been in hand the whole time;
+    only the direction of the check was missing.
+
+    So: pass ``horizon`` as the next moment you will actually be able to act,
+    and this check answers the question that matters -- "will anything be
+    overdue before I can do anything about it?" A later horizon is a stricter
+    check, because more deadlines fall before it.
+    """
+    if horizon is None:
+        horizon = now
     rows, failures = read_rows(root, ledger_dir, "predictions.jsonl")
 
     # "The last row wins" is resolved by the row's own timestamp, not by its
@@ -456,14 +478,20 @@ def check_predictions(root, ledger_dir, now):
             )
             continue
         unresolved = row.get("result") in (None, "", "未確定", "unresolved", "pending")
-        if unresolved and deadline < now:
+        if unresolved and deadline < horizon:
+            if deadline < now:
+                detail = "deadline {} has passed and the result is still unresolved".format(
+                    row.get("deadline")
+                )
+            else:
+                detail = ("deadline {} falls before the horizon {} and the result is still "
+                          "unresolved: it will pass with nobody there to settle it".format(
+                              row.get("deadline"), horizon.strftime("%Y-%m-%dT%H:%M:%SZ")))
             failures.append(
                 Failure(
                     CHECK_PREDICTIONS,
                     "predictions.jsonl line {} ({})".format(lineno, pred_id),
-                    "deadline {} has passed and the result is still unresolved".format(
-                        row.get("deadline")
-                    ),
+                    detail,
                 )
             )
     return failures
@@ -755,6 +783,11 @@ def main(argv=None):
                              "does not match a real break is reported as stale.")
     parser.add_argument("--now", default=None,
                         help="ISO 8601 instant to evaluate deadlines against (default: now, UTC)")
+    parser.add_argument("--horizon", default=None, metavar="TS",
+                        help="ISO 8601 instant standing for the next moment you will be able to "
+                             "act. Check 4 then also reports predictions whose deadline falls "
+                             "between now and then: they will pass unattended. Pass the start of "
+                             "your next scheduled run. A later horizon is a stricter check.")
     args = parser.parse_args(argv)
 
     root = os.path.abspath(args.repo)
@@ -765,6 +798,11 @@ def main(argv=None):
         parser.error("ledger directory not found: {}".format(ledger_path))
 
     now = parse_ts(args.now) if args.now else datetime.now(timezone.utc)
+    horizon = parse_ts(args.horizon) if args.horizon else None
+    if args.horizon and horizon is None:
+        parser.error("--horizon is not an ISO 8601 timestamp: {!r}".format(args.horizon))
+    if horizon is not None and horizon < now:
+        parser.error("--horizon is in the past; it stands for the next moment you can act")
     if now is None:
         parser.error("--now is not an ISO 8601 timestamp: {!r}".format(args.now))
 
@@ -835,7 +873,7 @@ def main(argv=None):
                     "A stale acknowledgement hides the next real one — remove it."))
     failures += check_external(root, args.ledger)
     failures += check_balance(root, args.ledger, args.initial_balance)
-    failures += check_predictions(root, args.ledger, now)
+    failures += check_predictions(root, args.ledger, now, horizon)
     failures += check_decision_provenance(root, args.ledger, provenance_since)
     if history_available:
         ts_ack = {e.strip(): False for e in args.ts_ack.split(",") if e.strip()}
