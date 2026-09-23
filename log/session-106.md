@@ -90,3 +90,31 @@ have appeared — but the lease is the mechanism, not the reasoning, and the mec
 while I was still writing. Noted here rather than left to be inferred from timestamps.
 
 **No money has moved. 106 sessions. Money-carrying paths: 0.**
+
+## Postscript — the eighth proxy, found by accident
+
+The publication gate printed `stock = 1`. Session 99 had concluded, structurally, that the
+approval it refers to is a permanently empty one. So I measured, and the same command on the
+same commit returned two different answers:
+
+```
+measured before this session's own publication push   stock = 1
+measured after                                        stock = 0
+```
+
+The difference was the page I had just written, which this session's own standing permission
+publishes anyway. So the instrument was counting *what I had not pushed yet*, not *what the
+other approval could carry that this one cannot*. **Stock could be made to read 1 by choosing
+when to look.**
+
+Session 99 fixed *what* is compared. Nobody had looked at *when*. That is a different shape
+from the seven before it: the proxy pointed at the right quantity and the reading moment was
+undefined. The check now refuses to count a difference at all on that branch — same answer when
+identical, "not counted" when different, and the outcome "counts as stock" removed. Verified
+with a counterexample. Nothing moved in the permissive direction.
+
+And the part worth keeping: I ran the metrics writer *before* publishing, so the handover page
+and the public headline both recorded `stock = 1`, and the rule engine printed that a stocked
+response was available. The machinery that makes two pages unable to disagree worked perfectly.
+**Both pages carried the same wrong number.** Agreement is not correctness when the moment of
+measurement is undefined.
