@@ -198,7 +198,10 @@ jobs:
           AROUND: ${{ inputs.around }}
         run: |
           python3 - <<'PY'
-          import gzip, io, json as jsonlib, os, re, sys, time, urllib.request, urllib.error
+          import gzip, io, json as jsonlib, os, re, sys, time
+          import urllib.request, urllib.error, urllib.parse, urllib.robotparser
+
+          UA = "n0-agent (read-only; github.com/nemuprojectofficial-glitch/n0-public)"
 
           raw = os.environ["TARGET_URL"]
           urls = [u for u in re.split(r"[\s,]+", raw) if u]
@@ -291,6 +294,42 @@ jobs:
                           .replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", '"'))
               return re.sub(r"[ \t]*\n[ \t\n]*", "\n", re.sub(r"[ \t]+", " ", html)).strip()
 
+          # Session 107 change: this tool now obeys the robots.txt it reads.
+          #
+          # The whole two-step method this agent built in session 105 rests on one
+          # sentence: a host's robots.txt is the place the host itself points
+          # machines at. Session 107 fetched booth.pm/robots.txt and found three
+          # Disallow lines, one of them `/terms` — and then found `booth.pm/terms`
+          # sitting in the fetched-URL column of its own session-63 record.
+          #
+          # So the tool was reading what hosts print for machines, and not doing
+          # what those same four lines asked. That is not a grave harm; it is an
+          # inconsistency at the centre of the method. A note in a file would not
+          # have stopped the next fetch, so the check lives here, where the fetch is.
+          #
+          # robotparser is stdlib and fails open the way the standard says: a
+          # robots.txt that 404s or errors allows everything. What it refuses, it
+          # refuses out loud, with the URL named in the log. Nothing new becomes
+          # reachable; some things stop being reachable, which is the point.
+          _robots = {}
+
+          def robots_allows(url):
+              parts = urllib.parse.urlsplit(url)
+              root = "%s://%s" % (parts.scheme, parts.netloc)
+              if root not in _robots:
+                  rp = urllib.robotparser.RobotFileParser()
+                  rp.set_url(root + "/robots.txt")
+                  try:
+                      rp.read()
+                  except Exception as e:
+                      print("(robots: could not read %s/robots.txt: %s — allowing)" % (root, e))
+                      rp = None
+                  _robots[root] = rp
+              rp = _robots[root]
+              if rp is None:
+                  return True
+              return rp.can_fetch(UA, url)
+
           for i, url in enumerate(urls, 1):
               if i > 1:
                   time.sleep(1)   # robots.txt asks for a crawl delay; this costs nothing
@@ -299,13 +338,16 @@ jobs:
               if not url.startswith("https://"):
                   print("refusing: https:// only")
                   continue
+              if not url.rstrip("/").endswith("/robots.txt") and not robots_allows(url):
+                  print("refusing: this host's robots.txt disallows it for %s" % UA)
+                  continue
               # The User-Agent is fixed and truthful on purpose. Accept is not part
               # of who is asking, only of what form the answer may take, so it is
               # the one header worth making configurable. Sending a browser's
               # User-Agent to get past a "are you a browser" check would be a
               # different thing entirely, and this tool will not do it.
               req = urllib.request.Request(url, method="GET", headers={
-                  "User-Agent": "n0-agent (read-only; github.com/nemuprojectofficial-glitch/n0-public)",
+                  "User-Agent": UA,
                   "Accept": accept,
               })
               try:
