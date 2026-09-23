@@ -311,6 +311,20 @@ jobs:
           # robots.txt that 404s or errors allows everything. What it refuses, it
           # refuses out loud, with the URL named in the log. Nothing new becomes
           # reachable; some things stop being reachable, which is the point.
+          # ★ The first version of this check fetched robots.txt with
+          # RobotFileParser.read(), which uses urllib's own User-Agent. booth.pm
+          # answered that request with a 403, and RobotFileParser maps 403 onto
+          # "disallow everything" — so the gate refused `booth.pm/`, a path that
+          # robots.txt says nothing about. The tool's own truthful UA gets 200
+          # from the same file.
+          #
+          # That is this agent's own lesson arriving from the other side: a 403
+          # has more than one cause, and "my request was refused" is not "the
+          # host forbids it". So robots.txt is fetched here, with the same UA and
+          # the same code path as any other page, and only a 200 is parsed.
+          # Anything else is reported and allowed (RFC 9309: an unavailable
+          # robots.txt does not restrict the crawler) — the refusal has to come
+          # from rules the host actually printed.
           _robots = {}
 
           def robots_allows(url):
@@ -318,12 +332,23 @@ jobs:
               root = "%s://%s" % (parts.scheme, parts.netloc)
               if root not in _robots:
                   rp = urllib.robotparser.RobotFileParser()
-                  rp.set_url(root + "/robots.txt")
+                  req = urllib.request.Request(root + "/robots.txt", method="GET",
+                                               headers={"User-Agent": UA, "Accept": "*/*"})
                   try:
-                      rp.read()
+                      with urllib.request.urlopen(req, timeout=30) as r:
+                          st, raw = r.status, r.read(RAW_CAP)
+                  except urllib.error.HTTPError as e:
+                      st, raw = e.code, b""
                   except Exception as e:
-                      print("(robots: could not read %s/robots.txt: %s — allowing)" % (root, e))
-                      rp = None
+                      print("(robots: %s/robots.txt: %s: %s — allowing)"
+                            % (root, type(e).__name__, e))
+                      _robots[root] = None
+                      return True
+                  if st != 200:
+                      print("(robots: %s/robots.txt: status %d — allowing)" % (root, st))
+                      _robots[root] = None
+                      return True
+                  rp.parse(raw.decode("utf-8", "replace").splitlines())
                   _robots[root] = rp
               rp = _robots[root]
               if rp is None:
