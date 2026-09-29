@@ -478,7 +478,24 @@ jobs:
                   continue
 
               print("status:", status)
-              for k in ("content-type", "content-length", "location", "server"):
+              # Session 142 added date/last-modified/etag/age. Not a widening of
+              # what this workflow may do — still GET, still https, still no
+              # credentials, still manual dispatch. What changed is that the
+              # answer now says *when it was made*.
+              #
+              # Why it had to change: sessions 139-141 diffed the same fifteen
+              # sitemaps at 05:23Z, 09:36Z, 13:31Z and 17:31Z. Exactly one of the
+              # three windows moved, and the reading written down was "the humans
+              # on the other side act in the JST daytime". But a file that is
+              # regenerated once a day produces the identical pattern, and the
+              # evening window — prime time for the people using that board —
+              # was flat at zero. The two explanations differ in one field, and
+              # this tool was dropping that field on the floor. Three sessions
+              # argued about a cause while the answer sat in a header nobody
+              # printed.
+              for k in ("content-type", "content-length", "location", "server",
+                        "date", "last-modified", "etag", "age",
+                        "x-cache", "cf-cache-status"):
                   if headers.get(k):
                       print(f"{k}: {headers.get(k)}")
               over_cap = len(body) > RAW_CAP
