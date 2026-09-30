@@ -1,0 +1,144 @@
+# Send exactly one message, to the address the operator put in a secret, to find
+# out whether the required-reviewer gate on the `send-mail` environment actually
+# fires. It is a wiring check, not a letter.
+#
+# Why a separate file was needed
+# ------------------------------
+# Request C-0027 asked my operator for four hands: create the `send-mail`
+# environment on this repository, put herself on it as a required reviewer, add
+# the secrets, and return one line to the ledger saying it is ready. It said
+# that once that was done I would "dispatch send-one-email.yml and measure
+# whether the approval is really demanded — addressed to MAIL_TO, which is my
+# operator, so no third party is written to."
+#
+# When the approval came back I read the actual files, and that sentence was
+# wrong in three ways:
+#
+#   * `send-one-email.yml` has no MAIL_TO. Its recipient is a constant in the
+#     file, and the constant is an outside organisation. Dispatching it would
+#     have put a real letter in a stranger's inbox, not tested any wiring.
+#   * `MAIL_TO` is read by nothing in this repository. The name the sender
+#     actually requires is MAIL_REPLY_TO, and without it nothing sends at all.
+#   * Both existing send workflows have already fired once and each refuses to
+#     fire again, because `audit/external.jsonl` records their send. That refusal
+#     is the design working. It also means neither can serve as a test.
+#
+# This is the same mistake the header of `send-one-email.yml` already records
+# against request C-0015 — "I had written 'I will send it' in the request without
+# checking" — made again, by me, in the request whose whole subject was the
+# readiness of that means. I am writing it here rather than only in my own notes
+# because this file is the part a reader can check.
+#
+# How the recipient is constrained, and why it is not a constant here
+# ------------------------------------------------------------------
+# The other send workflows pin the recipient as a literal in a public file, so
+# that any change to it shows in a diff. That is the right shape for a letter to
+# a chosen stranger. It is the wrong shape here, for two reasons: publishing my
+# operator's personal address is a harm nobody asked for, and a constant I can
+# edit is *visible*, not *prevented*.
+#
+# So the recipient of this workflow is `secrets.MAIL_REPLY_TO` — an address the
+# operator set and I cannot read.
+#
+#   I cannot aim this workflow. There is no input, no constant, and no value I
+#   can see. It goes to her inbox or it goes nowhere.
+#
+# For this one purpose that is a stronger constraint than a public constant.
+#
+# What still cannot happen
+# ------------------------
+#   * GET/POST elsewhere: no. One provider call, to send one message.
+#   * A different recipient: there is no way to express one.
+#   * A different body: `mail/wiring-check.txt` is committed and public.
+#   * Twice: if `audit/external.jsonl` records a send for C-0027, it refuses.
+#   * Before my operator has decided: see the next paragraph.
+#
+# The promise, made mechanical
+# ----------------------------
+# C-0027 says, in my own words: I will not dispatch until the "it is ready" line
+# comes back in the ledger. Five of the first seven decisions in this project
+# arrived only as speech inside a session and left no trace in the append-only
+# ledger; a promise I merely remember is one that a later session, with no
+# memory of making it, can keep by accident at best. So this workflow reads
+# `audit/claims.jsonl` and refuses unless C-0027 is recorded there as granted.
+#
+# The gate is not there to doubt my operator. It is there so that the trace,
+# rather than my memory, is what lets the send happen.
+
+name: wiring check — one message to the operator (C-0027)
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'type WIRING to confirm (there are no other inputs; recipient is a secret, body is a committed file)'
+        required: true
+
+env:
+  BODY_FILE: mail/wiring-check.txt
+  CLAIM: C-0027
+  MAIL_FROM_NAME: n0 autonomous agent
+
+permissions:
+  contents: read
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    environment: send-mail
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Refuse unless confirmed
+        run: |
+          [ "${{ inputs.confirm }}" = "WIRING" ] || {
+            echo "not confirmed; nothing sent" >&2; exit 1; }
+
+      - name: Refuse unless the ledger records C-0027 as granted
+        run: |
+          if ! python3 - <<'PY'
+          import json, sys
+          state = None
+          for line in open("audit/claims.jsonl", encoding="utf-8"):
+              line = line.strip()
+              if not line:
+                  continue
+              row = json.loads(line)
+              if row.get("claim_id") == "C-0027":
+                  state = row.get("status")
+          print("audit/claims.jsonl says C-0027 is: %r" % (state,))
+          sys.exit(0 if state == "可" else 1)
+          PY
+          then
+            echo "C-0027 is not recorded as granted in the append-only ledger." >&2
+            echo "The approval may well have been spoken in a session; five of the first" >&2
+            echo "seven decisions in this project arrived that way and left no row." >&2
+            echo "This workflow deliberately runs on the trace, not on memory. Nothing sent." >&2
+            exit 1
+          fi
+
+      - name: Refuse if this claim has already been sent
+        run: |
+          if grep -q '"claim_id": *"'"$CLAIM"'"' audit/external.jsonl; then
+            echo "audit/external.jsonl already records a send for $CLAIM." >&2
+            echo "One wiring check is enough. Nothing sent." >&2
+            exit 1
+          fi
+          echo "no prior send recorded for $CLAIM"
+
+      - name: Show exactly what will be sent
+        run: |
+          echo "to      : (the MAIL_REPLY_TO secret — masked here, and unreadable to me)"
+          echo "body    : $BODY_FILE"
+          echo "--------------------------------------------------------"
+          cat "$BODY_FILE"
+          echo "--------------------------------------------------------"
+
+      - name: Send it
+        env:
+          TO: ${{ secrets.MAIL_REPLY_TO }}
+          SENDGRID_API_KEY: ${{ secrets.SENDGRID_API_KEY }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          MAIL_FROM: ${{ secrets.MAIL_FROM }}
+          MAIL_REPLY_TO: ${{ secrets.MAIL_REPLY_TO }}
+        run: python3 .github/send_one_email.py

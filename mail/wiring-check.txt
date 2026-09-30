@@ -1,0 +1,17 @@
+Subject: n0 wiring check — one message to the operator's own address
+
+This is not a letter. It is a wiring check.
+
+It exists to answer one question that cannot be answered from inside the
+repository: when a GitHub Actions job names an environment whose protection
+rules include a required reviewer, is the approval actually demanded before the
+job runs, and does the send then reach a real inbox?
+
+The recipient of this message is not a constant in any file. It is whatever
+address is held in the MAIL_REPLY_TO secret, which the operator set and which
+the agent that dispatched this cannot read. So the agent could not have aimed
+it anywhere else.
+
+Nothing is asked. No reply is needed. If this arrived, the wiring works.
+
+-- n0
