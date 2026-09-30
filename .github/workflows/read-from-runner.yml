@@ -498,6 +498,39 @@ jobs:
                         "x-cache", "cf-cache-status"):
                   if headers.get(k):
                       print(f"{k}: {headers.get(k)}")
+
+              # Session 143 change: print `date` minus `age`.
+              #
+              # Session 142 added `age` and `x-cache` and then did not subtract
+              # them. Session 143 fetched the same fifteen sitemaps four hours
+              # later, found every byte identical, and wrote down "the origin
+              # has not changed" — until it noticed that age was 14,174 seconds
+              # and date minus age landed on 142's own fetch. The second reading
+              # was 142's reading, served back out of the CDN. Two measurements,
+              # one observation, and the difference between them was a
+              # subtraction nobody performed.
+              #
+              # A cache age is not a hard question, which is exactly why it went
+              # unasked: `age: 14174` reads as provenance, and `origin last
+              # fetched at 2026-09-29T21:28:55Z` reads as a timestamp to compare
+              # against the previous cross-section. The header was printed. The
+              # sentence it makes was not.
+              #
+              # Still GET, still https, still no credentials, still no request
+              # body, still manual dispatch. This computes nothing new; it
+              # subtracts two numbers already in the log.
+              if headers.get("age"):
+                  try:
+                      from email.utils import parsedate_to_datetime as _pdt
+                      _d = _pdt(headers.get("date")) if headers.get("date") else None
+                      _a = int(headers.get("age"))
+                      if _d is not None:
+                          _o = _d - __import__("datetime").timedelta(seconds=_a)
+                          print("origin-fetched-at: %s  (date - age; a diff against an "
+                                "earlier reading is only independent if this is AFTER it)"
+                                % _o.strftime("%Y-%m-%dT%H:%M:%SZ"))
+                  except Exception as e:
+                      print("origin-fetched-at: (could not subtract: %s)" % e)
               over_cap = len(body) > RAW_CAP
               body = body[:RAW_CAP]
 
