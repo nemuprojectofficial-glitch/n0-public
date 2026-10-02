@@ -64,6 +64,54 @@
 #
 # The gate is not there to doubt my operator. It is there so that the trace,
 # rather than my memory, is what lets the send happen.
+#
+# Session 149: the two sentences above name two different predicates
+# -----------------------------------------------------------------
+# They were written one after the other in the same session, and they do not
+# say the same thing. The promise is about "it is ready" — the wiring exists.
+# The gate below tests "granted" — permission was given. Permission arrived on
+# 2026-09-30, by speech. Readiness is a separate fact, and nothing in the
+# ledger reports it.
+#
+# That mattered, because the session that wrote this file also believed it was
+# forbidden from writing decision rows at all — a rule it had in fact repealed
+# twenty days earlier, and written seventeen rows against since. So the ledger
+# kept saying C-0027 was pending, this gate kept refusing, and the one external
+# path whose last step was in my own hands stayed shut for three days on the
+# strength of a sentence about myself that was no longer true.
+#
+# Writing the missing row was owed either way: an append-only ledger that says
+# "pending" about something settled is a false record of the past by omission,
+# which is the exact argument `verify.py`'s check 5 makes in its own docstring.
+# But writing it also opens this gate — and the row is mine, not my operator's.
+#
+# So two things change here, and one thing does not.
+#
+#   * The gate now also requires that the granting row NOT be one I recorded
+#     myself (`recorded_by` must be absent or anything other than AI). That is
+#     a presence test and I could defeat it by typing a different string. It is
+#     kept for the same reason check 5 is kept: it makes silence stop working.
+#     An unmarked pass is no longer indistinguishable from my operator's own.
+#     It reads only the LAST C-0027 row, so a correction row of mine written
+#     afterwards closes the gate again. That is the safe direction, and it is
+#     worth knowing rather than discovering: once the ready line is in, I should
+#     not append further AI rows to C-0027 without expecting to re-ask for it.
+#
+#   * The claim that this gate runs "on the trace, not on memory" is narrowed.
+#     It was true only while I believed I could not write decision rows. I can.
+#     No gate inside a repository I push to can tell my row from my operator's.
+#
+#   * What does not change, and never depended on any of this: THE SECRETS ARE
+#     THE REAL GATE. If the `send-mail` environment does not exist, or does not
+#     carry MAIL_REPLY_TO, `send_one_email.py` dies and nothing leaves. I cannot
+#     read those values, cannot write them, and cannot route around them. The
+#     unforgeable readiness check was always in the runner, never in the ledger.
+#
+# I am also not dispatching this on the strength of my own row. In
+# `あやがやること.md` — the page my operator actually reads — session 145b
+# promised her, in writing, that this would not fire until her "it is ready"
+# line came back. The gate below would now let me through. The promise does
+# not, and the promise is the stricter of the two.
 
 name: wiring check — one message to the operator (C-0027)
 
@@ -94,11 +142,12 @@ jobs:
           [ "${{ inputs.confirm }}" = "WIRING" ] || {
             echo "not confirmed; nothing sent" >&2; exit 1; }
 
-      - name: Refuse unless the ledger records C-0027 as granted
+      - name: Refuse unless the ledger records C-0027 as granted by someone other than me
         run: |
           if ! python3 - <<'PY'
           import json, sys
           state = None
+          by = None
           for line in open("audit/claims.jsonl", encoding="utf-8"):
               line = line.strip()
               if not line:
@@ -106,14 +155,27 @@ jobs:
               row = json.loads(line)
               if row.get("claim_id") == "C-0027":
                   state = row.get("status")
-          print("audit/claims.jsonl says C-0027 is: %r" % (state,))
-          sys.exit(0 if state == "可" else 1)
+                  by = row.get("recorded_by")
+          print("audit/claims.jsonl says C-0027 is: %r (recorded_by %r)" % (state, by))
+          # Session 149 added the second condition. The first row to grant C-0027 in
+          # the ledger is one I wrote myself, from speech, because leaving the field
+          # empty was a false record by omission. It was owed. It is not my
+          # operator's "it is ready" line, and this step must not treat it as one.
+          mine = (by or "").strip().upper().startswith("AI")
+          if state == "可" and mine:
+              print("...but that row is one I recorded myself. That is permission, "
+                    "not readiness, and not the line this workflow waits for.")
+          sys.exit(0 if (state == "可" and not mine) else 1)
           PY
           then
-            echo "C-0027 is not recorded as granted in the append-only ledger." >&2
+            echo "C-0027 is not recorded as granted by anyone but me." >&2
             echo "The approval may well have been spoken in a session; five of the first" >&2
             echo "seven decisions in this project arrived that way and left no row." >&2
-            echo "This workflow deliberately runs on the trace, not on memory. Nothing sent." >&2
+            echo "Writing that row down is owed — an append-only ledger saying 'pending'" >&2
+            echo "about a settled thing is a false record by omission. But my own row is" >&2
+            echo "permission, not readiness, and the promise in あやがやること.md waits on" >&2
+            echo "readiness. The secrets are the gate that cannot be argued with: without" >&2
+            echo "MAIL_REPLY_TO nothing leaves this runner at all. Nothing sent." >&2
             exit 1
           fi
 
