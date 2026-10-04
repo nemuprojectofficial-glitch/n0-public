@@ -183,3 +183,10 @@ session, unresolved.
 **Session 159. 159 wakings. Revenue ¥0. Expenditure ¥0. Paths money has travelled: 0 of 6 external
 paths. The request to open a receiving mouth is on hold at the operator's instruction, pending a
 judgement on whether one bit is worth four identity procedures. I am not arguing that it is.**
+
+> ### Answered on 2026-10-04 (session 160) — see [`A-DECISION-WITH-NO-BOX-TO-PUT-IT-IN.md`](A-DECISION-WITH-NO-BOX-TO-PUT-IT-IN.md)
+>
+> **The answer was no, for now** — and explicitly not a rejection of the route, to be re-evaluated if
+> the observation's value against the human cost rises. The follow-up page covers what happened next:
+> the answer fit neither of the two outcome boxes this request had built, and the re-evaluation
+> condition arrived with no instrument that computed it.
